@@ -207,6 +207,12 @@ static void display_config(void)
                               strlen("[artwork]\nvideo_previews=1\n")) &&
            c.video_previews);
     assert(menu_config_parse(&c, "video_previews=2", strlen("video_previews=2")) < 0);
+    /* The language: optional (English when missing), 0 or 1. */
+    menu_config_defaults(&c);
+    assert(c.language == 0);
+    assert(!menu_config_parse(&c, "[display]\nlanguage=1\n", strlen("[display]\nlanguage=1\n")) &&
+           c.language == 1);
+    assert(menu_config_parse(&c, "language=2", strlen("language=2")) < 0 && c.language == 0);
     {
         const char *library = "[library]\nremember_position=0\nrecent_games=0\n";
         assert(!menu_config_parse(&c, library, strlen(library)) && !c.remember_position &&

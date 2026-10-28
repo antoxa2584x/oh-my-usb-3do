@@ -55,6 +55,8 @@ typedef struct MenuConfig {
     int preview_sound;     /* 1: play previews with sound */
     /* 1: hide the Adult category folder and its games from browsing and Find. */
     int hide_adult;
+    /* The menu's language: MENU_LANGUAGE_ENGLISH (0) or _UKRAINIAN (1); see menu_text.h. */
+    int language;
 } MenuConfig;
 
 /*

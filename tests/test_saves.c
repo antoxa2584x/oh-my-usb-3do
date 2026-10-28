@@ -348,6 +348,24 @@ int main(void)
         assert(!parsed.folder_workaround && parsed.usb_covers && parsed.screen_margin == 12 &&
                parsed.large_titles && !parsed.remember_position && !parsed.recent_games &&
                parsed.video_previews && !parsed.preview_sound);
+        /* English is left out of the file, so menus from before the setting
+         * still read it; another language is written and read back. */
+        {
+            /* The file has no terminating zero: search a terminated copy. */
+            char text[MENU_CONFIG_BYTES + 1];
+            memcpy(text, f.file, MENU_CONFIG_BYTES);
+            text[MENU_CONFIG_BYTES] = 0;
+            assert(!parsed.language && !strstr(text, "language"));
+            config.language = 1;
+            setup(&f, &ode);
+            assert(!menu_settings_save(&ode, reader, &config));
+            assert(!menu_config_load(&ode, reader, &parsed) && parsed.language == 1);
+            memcpy(text, f.file, MENU_CONFIG_BYTES);
+            assert(strstr(text, "\r\nlanguage=1\r\n"));
+            config.language = 2;
+            assert(menu_settings_save(&ode, reader, &config) < 0);
+            config.language = 0;
+        }
         setup(&f, &ode);
         f.short_write = 1;
         assert(menu_settings_save(&ode, reader, &config) < 0);

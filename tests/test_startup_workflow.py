@@ -99,7 +99,7 @@ int main(void) {
 """
 with tempfile.TemporaryDirectory(prefix="oh3do-startup-") as directory:
     code, binary = Path(directory) / "test.c", Path(directory) / "test"
-    code.write_text(stubs + controller + checks)
+    code.write_text('#include "menu_text.h"\n' + stubs + controller + checks)
     subprocess.run(
         [
             os.environ.get("CC", "cc"),
@@ -110,6 +110,7 @@ with tempfile.TemporaryDirectory(prefix="oh3do-startup-") as directory:
             "-Isrc",
             "-Iom3dvid/include",
             str(code),
+            str(root / "src/menu_text.c"),
             "-o",
             str(binary),
         ],

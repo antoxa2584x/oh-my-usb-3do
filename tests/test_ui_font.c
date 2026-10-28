@@ -144,7 +144,35 @@ int main(void)
         }
         assert(stems == 3);
     }
+    {
+        /* UTF-8: Cyrillic is drawn (not as '?'), a character's later bytes
+         * have no width, and fits and tails never end inside a character. */
+        static const char word[] = "\320\223\321\200\320\260";    /* "Гра": 6 bytes */
+        static const char arrows[] = "\342\206\220/\342\206\222"; /* "←/→" */
+        unsigned char cyrillic[UI_FONT_STRIDE * UI_FONT_HEIGHT];
+        unsigned char unknown[UI_FONT_STRIDE * UI_FONT_HEIGHT];
+        int first;
+        for (style = 0; style < 5; ++style) {
+            first = ui_font_width("\320\223", style);
+            assert(first > 0 && ui_font_width(word, style) > first);
+            assert(ui_font_width("\223", style) == 0); /* a later byte alone */
+            assert(ui_font_width(arrows, style) > ui_font_width("/", style));
+            assert(ui_font_fit(word, 6, first, style) == 2);
+            assert(ui_font_fit(word, 3, 1000, style) == 2); /* stops before a cut character */
+            assert(ui_font_fit(word, 6, first - 1, style) == 0);
+            assert(ui_font_tail_start(word, 6, ui_font_width(word + 4, style), style) == 4);
+            ui_font_render(cyrillic, "\320\223", style, UI_FONT_WIDTH);
+            ui_font_render(unknown, "?", style, UI_FONT_WIDTH);
+            assert(memcmp(cyrillic, unknown, sizeof(cyrillic)));
+            /* A character the font lacks (here a CJK one), or one cut short,
+             * is drawn as '?'. */
+            ui_font_render(cyrillic, "\344\270\255", style, UI_FONT_WIDTH);
+            assert(!memcmp(cyrillic, unknown, sizeof(cyrillic)));
+            ui_font_render(cyrillic, "\320", style, UI_FONT_WIDTH);
+            assert(!memcmp(cyrillic, unknown, sizeof(cyrillic)));
+        }
+    }
     puts("UI font: crisp (1-bit) coverage, bold button letters, palette, proportional width, "
-         "fitting and buffer bounds passed");
+         "fitting, UTF-8 and buffer bounds passed");
     return 0;
 }

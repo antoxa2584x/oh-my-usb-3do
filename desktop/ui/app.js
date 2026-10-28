@@ -185,6 +185,7 @@ const defaults = {
   video_previews: true,
   preview_sound: true,
   hide_adult: false,
+  language: 0,
 };
 
 // ---- Status, messages and backend calls ----
@@ -2015,6 +2016,12 @@ const consoleSwitches = [
   ['large_titles', 'Large titles'],
 ];
 
+/** The menu's languages, each named in itself (see console_config.rs). */
+const consoleLanguages = [
+  ['0', 'English'],
+  ['1', 'Українська'],
+];
+
 /** The folder workaround's choices (see console_config.rs). */
 const folderWorkarounds = [
   ['0', 'Automatic'],
@@ -2030,11 +2037,15 @@ function settingsForm(settings, prefix = 'config') {
   const workarounds = folderWorkarounds
     .map(([value, label]) => option(value, label, String(settings.folder_workaround) === value))
     .join('');
+  const languages = consoleLanguages
+    .map(([value, label]) => option(value, label, String(settings.language ?? 0) === value))
+    .join('');
   return [
     '<div class="form-grid">',
     switches,
     `<label class="field">Screen margin<input type="number" min="0" max="12" id="${prefix}-screen_margin" value="${settings.screen_margin}"></label>`,
     `<label class="field">Folder workaround<select id="${prefix}-folder_workaround">${workarounds}</select></label>`,
+    `<label class="field">Menu language<select id="${prefix}-language">${languages}</select></label>`,
     '</div>',
   ].join('');
 }

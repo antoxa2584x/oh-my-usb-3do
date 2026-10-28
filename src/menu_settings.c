@@ -3,6 +3,7 @@
  * same size, and menu_config.h for the format.
  */
 #include "menu_settings.h"
+#include "menu_text.h"
 #include <string.h>
 
 /* Whether `value` is between 0 and `largest`, inclusive. */
@@ -18,7 +19,8 @@ static int is_valid_config(const MenuConfig *config)
            in_range(config->usb_covers, 1) && in_range(config->screen_margin, MENU_MARGIN_MAX) &&
            in_range(config->large_titles, 1) && in_range(config->remember_position, 1) &&
            in_range(config->recent_games, 1) && in_range(config->video_previews, 1) &&
-           in_range(config->preview_sound, 1) && in_range(config->hide_adult, 1);
+           in_range(config->preview_sound, 1) && in_range(config->hide_adult, 1) &&
+           in_range(config->language, MENU_LANGUAGE_LAST);
 }
 
 /*
@@ -66,6 +68,10 @@ int menu_settings_save(Ode *ode, OdeReadBuffer reader, const MenuConfig *config)
     strcat(text, "\r\n[display]\r\n");
     append_setting(text, "screen_margin", config->screen_margin);
     append_setting(text, "large_titles", config->large_titles);
+    /* Only a language other than English is written, so the file stays one
+     * that menus and desktop apps from before the setting can read. */
+    if (config->language != MENU_LANGUAGE_ENGLISH)
+        append_setting(text, "language", config->language);
     strcat(text, "\r\n[library]\r\n");
     append_setting(text, "remember_position", config->remember_position);
     append_setting(text, "recent_games", config->recent_games);

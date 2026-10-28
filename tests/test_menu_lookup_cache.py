@@ -122,7 +122,7 @@ int main(void) {
 """
 with tempfile.TemporaryDirectory(prefix="oh3do-lookups-") as directory:
     code, binary = Path(directory) / "test.c", Path(directory) / "test"
-    code.write_text(stubs + controller + checks)
+    code.write_text('#include "menu_text.h"\n' + stubs + controller + checks)
     subprocess.run(
         [
             os.environ.get("CC", "cc"),
@@ -139,6 +139,7 @@ with tempfile.TemporaryDirectory(prefix="oh3do-lookups-") as directory:
             "-Wl,--wrap=library_metadata_find",
             "-Isrc",
             str(code),
+            str(root / "src/menu_text.c"),
             "src/library_index.c",
             "src/library_features.c",
             "src/menu_sort.c",

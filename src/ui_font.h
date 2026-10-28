@@ -8,8 +8,11 @@
  * ink and background color.
  *
  * The glyphs come from ui_font_data.h, which tools/build-ui-font.py
- * generates from the Ark Pixel font. They cover printable ASCII only; any
- * other byte is drawn as '?'.
+ * generates from the Ark Pixel font. Text is UTF-8; the font has printable
+ * ASCII, the Ukrainian alphabet (with a few Russian letters) and the
+ * quotes U+2019, U+00AB and U+00BB.
+ * Any other character is drawn as '?'. Lengths, fits and offsets below
+ * count bytes, and never end inside a character.
  */
 #ifndef OH3DO_UI_FONT_H
 #define OH3DO_UI_FONT_H

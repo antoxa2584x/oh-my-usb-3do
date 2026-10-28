@@ -42,6 +42,7 @@ fn changed() -> Settings {
         video_previews: true,
         preview_sound: false,
         hide_adult: true,
+        language: 1,
     }
 }
 
@@ -64,6 +65,11 @@ fn defaults_and_every_setting_round_trip_in_the_console_format() {
     .unwrap();
     assert!(legacy.hide_adult && legacy.usb_covers && legacy.preview_sound);
     assert_eq!(legacy.screen_margin, 9);
+    // English, the default, is left out of the file, which older menus and
+    // apps (which do not know the setting) then still read.
+    let english = Settings::default().encode().unwrap();
+    assert!(!String::from_utf8(english).unwrap().contains("language"));
+    assert_eq!(Settings::parse(b"language=1").unwrap().language, 1);
 }
 
 #[test]
@@ -88,6 +94,7 @@ fn console_written_padding_nul_and_old_tails_are_supported() {
 fn invalid_values_keys_sections_and_buffer_boundaries_are_rejected() {
     for text in [
         "hide_adult=2\n",
+        "language=2\n",
         "screen_margin=13\n",
         "folder_workaround=3\n",
         "usb_covers=-1\n",
@@ -234,7 +241,7 @@ int main(int argc, char **argv) {
     assert(size < sizeof(text) && !menu_config_parse(&c, text, size));
     assert(c.folder_workaround == 2 && !c.usb_covers && c.screen_margin == 12);
     assert(c.large_titles && !c.remember_position && !c.recent_games);
-    assert(c.video_previews && !c.preview_sound && c.hide_adult);
+    assert(c.video_previews && !c.preview_sound && c.hide_adult && c.language == 1);
     return 0;
 }
 "#,

@@ -89,7 +89,7 @@ int main(void) {
 """
 with tempfile.TemporaryDirectory(prefix="oh3do-recovery-") as directory:
     code, binary = Path(directory) / "test.c", Path(directory) / "test"
-    code.write_text(stubs + controller + checks)
+    code.write_text('#include "menu_text.h"\n' + stubs + controller + checks)
     subprocess.run(
         [
             os.environ.get("CC", "cc"),
@@ -99,6 +99,7 @@ with tempfile.TemporaryDirectory(prefix="oh3do-recovery-") as directory:
             "-Werror",
             "-Isrc",
             str(code),
+            str(root / "src/menu_text.c"),
             "-o",
             str(binary),
         ],

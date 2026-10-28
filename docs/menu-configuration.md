@@ -33,9 +33,12 @@ preview_sound=1
 | --- | --- |
 | `folder_workaround` | `0`: Auto; `1`: On; `2`: Off. Auto is recommended for the FCare ODE. |
 | `screen_margin` | 0–12 pixels |
+| `language` | `0`: English; `1`: Ukrainian. Optional, in `[display]`. |
 | Other settings | `0`: Off; `1`: On |
 
-`usb_covers` is the **Show covers** setting. `hide_adult` applies only when
+`usb_covers` is the **Show covers** setting. The console and desktop app write
+`language` only when it is not English, so files for English stay readable by
+earlier menus and desktop apps, which reject the key. `hide_adult` applies only when
 there is no category configuration; otherwise `.ohmy3do/categories.json`
 controls visibility. Manage categories through the desktop app or console Settings.
 

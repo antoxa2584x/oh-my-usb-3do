@@ -3,6 +3,7 @@
  * See save_catalog.h for the layout.
  */
 #include "save_catalog.h"
+#include "menu_text.h"
 #include "usb_art.h"
 #include <stdlib.h>
 #include <string.h>
@@ -498,7 +499,8 @@ static const char *result_hint(const SaveCatalogNode *node, const SaveNames *nam
         return hint;
     if (node->count)
         return node->files[0];
-    return node->state == SAVE_CATALOG_INVALID ? "Invalid backup - inspect on PC" : "Empty archive";
+    return node->state == SAVE_CATALOG_INVALID ? T("Invalid backup - inspect on PC")
+                                               : T("Empty archive");
 }
 
 int save_catalog_search(Ode *ode, OdeReadBuffer reader, const SaveNames *names, const char *query,

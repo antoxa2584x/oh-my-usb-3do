@@ -83,7 +83,7 @@ static int run_tools_return(Menu *menu)
     tools_input(menu, ControlA);
     menu->tools = TOOL_CATEGORIES;
     tools_input(menu, ControlB);
-    if (menu->tools != TOOL_CONFIG || menu->tool_selected != 8)
+    if (menu->tools != TOOL_CONFIG || menu->tool_selected != SETTING_CATEGORIES)
         abort();
     tools_input(menu, ControlB);
     if (menu->tools != TOOL_HOME || menu->tool_selected != 2)
@@ -1677,20 +1677,20 @@ static void check_filtering(Menu *menu)
 static void check_settings_controls(Menu *menu)
 {
     menu->tools = TOOL_CONFIG;
-    menu->tool_selected = 0;
+    menu->tool_selected = SETTING_MARGIN;
     menu->config.screen_margin = 0;
     tools_input(menu, ControlLeft);
     if (menu->config.screen_margin != 12)
         abort();
-    menu->tool_selected = 1;
+    menu->tool_selected = SETTING_LARGE_TITLES;
     tools_input(menu, ControlA);
     if (!menu->config.large_titles)
         abort();
     menu->settings_folder_workaround = menu->config.folder_workaround = 1;
     menu->settings_usb_covers = menu->config.usb_covers = 0;
-    menu->tool_selected = 2;
+    menu->tool_selected = SETTING_FOLDER_WORKAROUND;
     tools_input(menu, ControlA);
-    menu->tool_selected = 3;
+    menu->tool_selected = SETTING_COVERS;
     tools_input(menu, ControlRight);
 }
 
@@ -1704,20 +1704,20 @@ static void check_workaround_setting(Menu *menu)
     tools_input(menu, ControlC);
     if (strcmp(menu->tool_message, "Load a valid INI before saving."))
         abort();
-    menu->tool_selected = 9;
+    menu->tool_selected = SETTING_DISPLAY_DEFAULTS;
     tools_input(menu, ControlA);
     if (menu->config.screen_margin || menu->config.large_titles)
         abort();
     if (menu->settings_folder_workaround != MENU_WORKAROUND_OFF || !menu->settings_usb_covers)
         abort();
     tools_input(menu, ControlB);
-    menu->tool_selected = 2;
+    menu->tool_selected = 2; /* Settings, on the Tools screen */
     tools_input(menu, ControlA);
     if (menu->tools != TOOL_CONFIG || menu->settings_folder_workaround != MENU_WORKAROUND_OFF ||
         !menu->settings_usb_covers)
         abort();
     tools_input(menu, ControlUp);
-    if (menu->tool_selected != 11)
+    if (menu->tool_selected != SETTING_SAVE)
         abort();
     tools_input(menu, ControlA);
     if (strcmp(menu->tool_message, "Load a valid INI before saving."))
@@ -1726,7 +1726,7 @@ static void check_workaround_setting(Menu *menu)
     menu->ready = 1;
     menu->demo = 1;
     menu->saved_config = menu->config;
-    menu->tool_selected = 7;
+    menu->tool_selected = SETTING_PREVIEW_SOUND;
     tools_input(menu, ControlA);
     if (menu->config.preview_sound || !config_dirty(menu))
         abort();
@@ -1746,7 +1746,7 @@ static void check_unsaved_settings(Menu *menu)
     menu->settings_recent_games = menu->config.recent_games;
     if (config_dirty(menu))
         abort();
-    menu->tool_selected = 4;
+    menu->tool_selected = SETTING_VIDEO_PREVIEWS;
     tools_input(menu, ControlA);
     if (!config_dirty(menu))
         abort();
@@ -2401,7 +2401,7 @@ static void set_up_screen(Menu *menu, CCB *cover, const char *mode)
     }
     if (!strcmp(mode, "display-save")) {
         menu->tools = TOOL_CONFIG;
-        menu->tool_selected = 11;
+        menu->tool_selected = SETTING_SAVE;
     }
     if (!strcmp(mode, "results")) {
         menu->tools = TOOL_RESULTS;
@@ -2502,7 +2502,7 @@ static void set_up_screen(Menu *menu, CCB *cover, const char *mode)
             menu->tools = TOOL_HOME;
         if (!strcmp(mode, "gecko-settings")) {
             menu->tools = TOOL_CONFIG;
-            menu->tool_selected = 2;
+            menu->tool_selected = SETTING_FOLDER_WORKAROUND;
         }
         if (!strcmp(mode, "gecko-margin"))
             menu->config.screen_margin = 12;
@@ -2592,6 +2592,9 @@ int main(int argc, char **argv)
     menu.logo = &logo;
     menu.message = NULL;
     const char *mode = argc > 1 ? argv[1] : "";
+    /* preview-menu.py --language uk draws the screens in Ukrainian. */
+    if (getenv("OH3DO_PREVIEW_LANGUAGE") && !strcmp(getenv("OH3DO_PREVIEW_LANGUAGE"), "uk"))
+        menu_text_language(MENU_LANGUAGE_UKRAINIAN);
 
     /* Modes that run their own checks. */
     if (!strcmp(mode, "tools-return"))

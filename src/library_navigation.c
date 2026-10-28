@@ -10,6 +10,7 @@
  * art_navigation.h for why).
  */
 #include "library_navigation.h"
+#include "menu_text.h"
 #include "menu_ui.h"
 #include "library_features.h"
 #include <stdlib.h>
@@ -206,7 +207,7 @@ static int navigate(Ode *ode, const ArtRouteStep *route, unsigned int depth,
 
     names = (char *)malloc(path_length + 1);
     if (!names) {
-        ode->error = "Not enough navigation memory";
+        ode->error = N_("Not enough navigation memory");
         return -1;
     }
     memcpy(names, path, path_length + 1);
@@ -253,7 +254,7 @@ static int navigate(Ode *ode, const ArtRouteStep *route, unsigned int depth,
                 break;
         }
         if (index == listing.count) {
-            ode->error = "Queued/favorite path is missing";
+            ode->error = N_("Queued/favorite path is missing");
             goto restore;
         }
         entry = listing.entries[index];
@@ -263,7 +264,7 @@ static int navigate(Ode *ode, const ArtRouteStep *route, unsigned int depth,
             if (keep) {
                 /* Open the folder holding it, with it selected. */
                 if (menu_support_entry(entry->name, entry->is_directory, at_top)) {
-                    ode->error = "Favorite is a menu support file";
+                    ode->error = N_("Favorite is a menu support file");
                     goto restore;
                 }
                 keep->listing = listing;
@@ -285,7 +286,7 @@ static int navigate(Ode *ode, const ArtRouteStep *route, unsigned int depth,
 
         /* A folder on the way: enter it, remembering the way back. */
         if (entered == LIBRARY_DEPTH) {
-            ode->error = "Maximum folder depth reached";
+            ode->error = N_("Maximum folder depth reached");
             goto restore;
         }
         way_back[entered] = listing.has_parent ? listing.parent_id : parent_of(entry->toc_id);
@@ -334,7 +335,7 @@ restore:
 
 fatal:
     ode->navigation_failed = 1;
-    ode->error = "Library folder restore failed";
+    ode->error = N_("Library folder restore failed");
     result = -2;
 
 done:
@@ -576,7 +577,7 @@ restore:
 
 fatal:
     ode->navigation_failed = 1;
-    ode->error = "Search folder restore failed";
+    ode->error = N_("Search folder restore failed");
     result = -2;
 
 done:
@@ -606,7 +607,7 @@ int library_visit_folder(Ode *ode, const OdeListing *current, const MenuEntry *f
         return -1;
     entries = (const MenuEntry **)malloc(count * sizeof(*entries));
     if (!entries) {
-        ode->error = "Not enough navigation memory";
+        ode->error = N_("Not enough navigation memory");
         return -1;
     }
     ode_listing_init(&listing);
@@ -630,7 +631,7 @@ int library_visit_folder(Ode *ode, const OdeListing *current, const MenuEntry *f
                 break;
         }
         if (j == listing.count) {
-            ode->error = "Queued/favorite path is missing";
+            ode->error = N_("Queued/favorite path is missing");
             goto restore;
         }
         entries[i] = listing.entries[j];
@@ -649,7 +650,7 @@ restore:
 
 fatal:
     ode->navigation_failed = 1;
-    ode->error = "Library folder restore failed";
+    ode->error = N_("Library folder restore failed");
     result = -2;
 
 done:

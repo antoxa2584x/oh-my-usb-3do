@@ -20,8 +20,8 @@ const LIMIT: usize = 512;
 const END: &str = "; End of Oh My 3DO settings.";
 
 /// The settings' names, in the order `Settings::parse` keeps their values.
-/// hide_adult came last and may be missing from older files.
-const KEYS: [&str; 9] = [
+/// hide_adult and language came last and may be missing from older files.
+const KEYS: [&str; 10] = [
     "folder_workaround",
     "usb_covers",
     "screen_margin",
@@ -31,6 +31,7 @@ const KEYS: [&str; 9] = [
     "video_previews",
     "preview_sound",
     "hide_adult",
+    "language",
 ];
 /// A line without spaces, tabs and carriage returns at either end.
 fn trim(mut text: &[u8]) -> &[u8] {
@@ -63,6 +64,9 @@ pub struct Settings {
     pub video_previews: bool,
     pub preview_sound: bool,
     pub hide_adult: bool,
+    /// The menu's language: 0 = English, 1 = Ukrainian.
+    #[serde(default)]
+    pub language: u8,
 }
 impl Default for Settings {
     /// The menu's defaults, used when there is no settings file.
@@ -77,6 +81,7 @@ impl Default for Settings {
             video_previews: true,
             preview_sound: true,
             hide_adult: false,
+            language: 0,
         }
     }
 }
@@ -96,14 +101,14 @@ impl Settings {
         let length = data.len();
         let data = data.strip_prefix(b"\xef\xbb\xbf").unwrap_or(data);
         // The defaults, in KEYS order.
-        let mut values = [0u8, 1, 0, 0, 1, 1, 1, 1, 0];
-        let mut seen = [false; 9];
+        let mut values = [0u8, 1, 0, 0, 1, 1, 1, 1, 0, 0];
+        let mut seen = [false; 10];
         let mut ended = false;
         for raw in data.split(|b| *b == b'\n') {
             let raw = trim(raw);
             if raw == END.as_bytes() {
-                // A written file has every setting (hide_adult excepted,
-                // for files written before it existed).
+                // A written file has every setting (hide_adult and language
+                // excepted, for files written before they existed).
                 if !seen[..8].iter().all(|s| *s) {
                     bail!("Incomplete generated configuration")
                 }
@@ -169,15 +174,23 @@ impl Settings {
             video_previews: values[6] != 0,
             preview_sound: values[7] != 0,
             hide_adult: values[8] != 0,
+            language: values[9],
         })
     }
-    /// The settings as a settings file, checked by reading it back.
+    /// The settings as a settings file, checked by reading it back. As the
+    /// menu does, only a language other than English is written, so the file
+    /// stays readable by menus and apps from before the setting.
     pub fn encode(&self) -> Result<Vec<u8>> {
+        let language = if self.language == 0 {
+            String::new()
+        } else {
+            format!("language={}\r\n", self.language)
+        };
         let text = format!(
             "; Saved by Oh My 3DO Library.\r\n\
              [compatibility]\r\nfolder_workaround={}\r\n\
              [artwork]\r\nusb_covers={}\r\nvideo_previews={}\r\n\
-             [display]\r\nscreen_margin={}\r\nlarge_titles={}\r\n\
+             [display]\r\nscreen_margin={}\r\nlarge_titles={}\r\n{}\
              [library]\r\nremember_position={}\r\nrecent_games={}\r\nhide_adult={}\r\n\
              [audio]\r\npreview_sound={}\r\n{END}\r\n",
             self.folder_workaround,
@@ -185,6 +198,7 @@ impl Settings {
             u8::from(self.video_previews),
             self.screen_margin,
             u8::from(self.large_titles),
+            language,
             u8::from(self.remember_position),
             u8::from(self.recent_games),
             u8::from(self.hide_adult),

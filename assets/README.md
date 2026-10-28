@@ -102,8 +102,12 @@ The menu font is Ark Pixel, a bitmap font drawn pixel by pixel at 10 and 12 px.
 `tools/build-ui-font.py ARK_10PX_TTF ARK_12PX_TTF` converts the proportional
 Latin TTFs from the [Ark Pixel releases](https://github.com/TakWolf/ark-pixel-font/releases)
 (2026.10.16) into `src/ui_font_data.h`: 12 px for normal and large text, 10 px
-for small text, and the 10 px design doubled for headings. Every pixel is fully
-on or off. Rasterizing an outline font to 1-bit looked blocky on a real console
+for small text, and the 10 px design doubled for headings. Besides printable
+ASCII, it keeps the Ukrainian alphabet (with Ё, Ъ, Ы and Э for Russian game
+names), ’ « » and the arrows ← ↑ → ↓ for the menu's Ukrainian text, which
+is UTF-8. ASCII is unchanged from the ASCII-only font. In the doubled heading
+style, Й, Ї, Ґ and Ё are moved down into the 20-pixel line and the arrows are
+too wide, so headings avoid them. Every pixel is fully on or off. Rasterizing an outline font to 1-bit looked blocky on a real console
 and antialiasing it looked soft; a hand-drawn bitmap font avoids both. Glyphs
 keep their native pixel size. The generated font is covered by
 `vendor/fonts/ark-pixel-OFL.txt` (SIL Open Font License 1.1).

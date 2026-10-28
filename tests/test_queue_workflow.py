@@ -165,7 +165,7 @@ with tempfile.TemporaryDirectory(prefix="oh3do-queue-") as directory:
     path, binary = Path(directory) / "test.c", Path(directory) / "test"
     navigation = (root / "src/library_navigation.c").read_text()
     resolver = navigation[navigation.index("int library_current_files(") :]
-    path.write_text(stubs + resolver + controller + checks)
+    path.write_text('#include "menu_text.h"\n' + stubs + resolver + controller + checks)
     subprocess.run(
         [
             os.environ.get("CC", "cc"),
@@ -175,6 +175,7 @@ with tempfile.TemporaryDirectory(prefix="oh3do-queue-") as directory:
             "-Werror",
             "-Isrc",
             str(path),
+            str(root / "src/menu_text.c"),
             "src/ode.c",
             "src/menu_sort.c",
             "-o",

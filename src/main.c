@@ -50,6 +50,7 @@
 #include "menu_settings.h"
 #include "menu_position.h"
 #include "channel_gecko_data.h"
+#include "menu_text.h"
 
 /* The 3DO SDK (Portfolio) headers. */
 #include "controlpad.h"
@@ -198,7 +199,7 @@ typedef struct UiText {
     CCB *cel;
     int style, width, palette_valid, capacity_width, glyph_width;
     Color ink, background;
-    char value[97];
+    char value[193];
 } UiText;
 
 /*
@@ -449,8 +450,8 @@ typedef struct Menu {
 
     /* ---- Messages and controller input ---- */
     const char *message; /* the status line, if any */
-    char status[80];
-    char notice[80]; /* a short notice, shown for a few seconds */
+    char status[160];
+    char notice[160]; /* a short notice, shown for a few seconds */
     int notice_active;
     unsigned long notice_since;
     u32 suppress_buttons; /* buttons to ignore until they are let go */
@@ -642,8 +643,8 @@ static int folder_workaround(const Menu *menu)
 static const char *workaround_name(int value)
 {
     if (value == MENU_WORKAROUND_AUTO)
-        return "AUTO";
-    return value == MENU_WORKAROUND_ON ? "ON" : "OFF";
+        return T("AUTO");
+    return value == MENU_WORKAROUND_ON ? T("ON") : T("OFF");
 }
 
 /* Waits until the screen copy queued after the last full-screen video frame
@@ -749,10 +750,10 @@ static void selection_changed(Menu *menu)
     menu->cover_attempted = 0;
 }
 
-/* Shows a short notice on the status line for a few seconds. */
+/* Shows a short notice on the status line for a few seconds (translated). */
 static void notify(Menu *menu, const char *message)
 {
-    strncpy(menu->notice, message, sizeof(menu->notice) - 1);
+    strncpy(menu->notice, T(message), sizeof(menu->notice) - 1);
     menu->notice[sizeof(menu->notice) - 1] = 0;
     menu->notice_since = now_ms(menu);
     menu->notice_active = 1;
@@ -874,14 +875,15 @@ static void make_room_for_text(Menu *menu, UiText *cached, int width)
  * text, style or width changes. Text is drawn at its native size on whole
  * pixels even with a screen margin, so it stays sharp.
  *
- * Characters outside printable ASCII show as '?'. Text is cut off at x = 308.
+ * Text is UTF-8; characters the font lacks show as '?'. Text is cut off at
+ * x = 308.
  */
 static void text(Menu *menu, int x, int y, const char *string, Color color)
 {
     /* static: too big for the console's small stack. */
     static unsigned char bitmap[UI_FONT_STRIDE * UI_FONT_HEIGHT];
     UiText *cached;
-    char safe[97];
+    char safe[193];
     size_t i;
     int style = menu->large_drawing ? UI_FONT_LARGE : menu->text_style;
     int margin = menu->config.screen_margin;
@@ -896,10 +898,14 @@ static void text(Menu *menu, int x, int y, const char *string, Color color)
     if (max_width <= 0 || !*string)
         return;
 
-    for (i = 0; i < 96 && string[i]; ++i) {
+    for (i = 0; i < sizeof(safe) - 1 && string[i]; ++i) {
         unsigned char c = (unsigned char)string[i];
-        safe[i] = c >= 32 && c <= 126 ? (char)c : '?';
+        safe[i] = c >= 32 && c != 127 ? (char)c : '?';
     }
+    /* Text cut short ends before a whole character (UTF-8; see ui_font.h). */
+    if (string[i])
+        while (i > 0 && ((unsigned char)string[i] & 0xc0) == 0x80)
+            --i;
     safe[i] = 0;
 #ifdef UI_PREVIEW_TEXT
     UI_PREVIEW_TEXT(safe); /* the PC preview records every label */
@@ -921,6 +927,10 @@ static void text(Menu *menu, int x, int y, const char *string, Color color)
         glyph_width = cached->glyph_width;
     else
         glyph_width = ui_font_width(safe, style);
+#ifdef UI_PREVIEW_CLIPPED
+    if (glyph_width > max_width)
+        UI_PREVIEW_CLIPPED(safe); /* the preview lists text the screen's edge cuts short */
+#endif
     make_room_for_text(menu, cached, glyph_width < max_width ? glyph_width : max_width);
 
     if (cached->cel) {
@@ -1191,7 +1201,8 @@ static int button(Menu *menu, int x, int y, const char *key, const char *action,
     Color cap = !strcmp(key, "A")   ? ACCENT
                 : !strcmp(key, "B") ? REMOTE_RED
                 : !strcmp(key, "C") ? AMBER
-                : (!strcmp(key, "P") || !strcmp(key, "X") || !strcmp(key, "Hold P"))
+                : (!strcmp(key, "P") || !strcmp(key, "X") || !strcmp(key, "Hold P") ||
+                   !strcmp(key, T("Hold P")))
                     ? MakeRGB15(22, 23, 26)
                     : TV_ORANGE;
     Color lip = mix((unsigned int)cap, (unsigned int)INK, 9U, 16U);
@@ -1732,8 +1743,8 @@ static void tuning_overlay(Menu *menu, size_t selected)
 {
     osd(menu, selected);
     rectangle(menu, 166, 82, 132, 46, BG);
-    label_on(menu, 176, 86, "TUNING...", OSD_GREEN, UI_FONT_HEADING, BG);
-    label_on(menu, 176, 109, "Any button cancels", MUTED, UI_FONT_SMALL, BG);
+    label_on(menu, 176, 86, T("TUNING..."), OSD_GREEN, UI_FONT_HEADING, BG);
+    label_on(menu, 176, 109, T("Any button cancels"), MUTED, UI_FONT_SMALL, BG);
 }
 /* On-screen display: channel number (list position) and a 16-cell bar. */
 static void osd(Menu *menu, size_t selected)
@@ -1743,18 +1754,18 @@ static void osd(Menu *menu, size_t selected)
     if (++number > 999)
         number = 999;
     if (!menu->osd_hidden) {
-        char status[16];
+        char status[48];
         if (menu->osd_ch)
             draw_ui_cel(menu, menu->osd_ch, 244, 14, 1, 0);
         else
             label(menu, 238, 12, "CH", OSD_GREEN, UI_FONT_SMALL);
         /* Status readout under the channel number, as a TV shows its mode. */
         if (menu->recovery_media_off)
-            strcpy(status, "MEDIA OFF");
+            strcpy(status, T("MEDIA OFF"));
         else if (config_dirty(menu))
-            strcpy(status, "UNSAVED");
+            strcpy(status, T("UNSAVED"));
         else if (menu->playlist.count)
-            format(status, "QUEUE %lu", (unsigned long)menu->playlist.count);
+            format(status, T("QUEUE %lu"), (unsigned long)menu->playlist.count);
         else
             status[0] = 0;
         if (*status) {
@@ -1819,14 +1830,21 @@ static void osd(Menu *menu, size_t selected)
         if (menu->preview_off && menu->preview_has < 0)
             menu->preview_has = selected_preview(menu) != NULL;
         if (menu->preview_cel)
-            swap = "X:Cover";
+            swap = T("X:Cover");
         else if (menu->preview_off && menu->preview_has)
-            swap = "X:Video";
+            swap = T("X:Video");
         else if (menu->cover)
-            swap = "X:Hold";
+            swap = T("X:Hold");
         if (swap) {
-            rectangle(menu, 254, 148, 54, 15, INK);
-            control_badges(menu, 256, 149, swap, 0);
+            /* The X cap and gap take 22 pixels, and 4 more allow for rounding
+             * with a screen margin; a longer (translated) label widens the box
+             * leftwards from the TV's right edge. */
+            int scale = 320 - 2 * menu->config.screen_margin;
+            int width = 26 + ui_font_width(strchr(swap, ':') + 1, UI_FONT_SMALL) * 320 / scale;
+            if (width < 54)
+                width = 54;
+            rectangle(menu, 308 - width, 148, width, 15, INK);
+            control_badges(menu, 310 - width, 149, swap, 0);
         }
     }
 }
@@ -1853,7 +1871,7 @@ static void media_placeholder(Menu *menu, int folder)
     rectangle(menu, 247, 95, 3, 3, ACCENT);
     rectangle(menu, 204, 125, 11, 3, LINE);
     rectangle(menu, 233, 125, 11, 3, LINE);
-    label(menu, folder ? 194 : 199, 134, folder ? "Browse folder" : "No artwork", MUTED,
+    label(menu, folder ? 194 : 199, 134, folder ? T("Browse folder") : T("No artwork"), MUTED,
           UI_FONT_SMALL);
 }
 
@@ -2320,7 +2338,7 @@ static void draw_row(Menu *menu, size_t i, size_t start, size_t selected, int st
         x += 16;
         room -= 16;
     } else if (menu->listing.has_parent && !i) {
-        name = "< Back";
+        name = T("< Back");
         length = 6;
     } else {
         const MenuEntry *entry = browser_entry(menu, i - (menu->listing.has_parent ? 1 : 0));
@@ -2513,34 +2531,34 @@ static void draw_title_card(Menu *menu, const MenuEntry *chosen, size_t total, c
         size_t title_length = 0;
         details[0] = more[0] = 0;
         if (menu->review) {
-            title = "Disc queue";
-            second = "A plays from the first disc";
-            third = "C moves, C + X clears";
+            title = T("Disc queue");
+            second = T("A plays from the first disc");
+            third = T("C moves, C + X clears");
         } else if (chosen && !game_entry(menu, chosen)) {
             title = chosen->name;
-            second = "Folder";
-            third = "A opens it";
+            second = T("Folder");
+            third = T("A opens it");
         } else if (chosen) {
             title = display_game_variant(
                 chosen->name, 0,
                 title_variant(menu, menu->selected - (menu->listing.has_parent ? 1 : 0)));
             title_length = strlen(title);
             if (info) {
-                format(details, "%.60s", *info->genre ? info->genre : "Unknown genre");
+                format(details, "%.60s", *info->genre ? info->genre : T("Unknown genre"));
                 if (*info->released) {
                     strcat(details, "  -  ");
                     strncat(details, info->released, 4);
                 }
                 format(more, "%.50s", *info->publisher ? info->publisher : "");
             } else
-                strcpy(details, "No game information");
+                strcpy(details, T("No game information"));
             second = details;
             third = more;
         } else if (total) {
-            title = "Back";
-            second = "Return to the parent folder";
+            title = T("Back");
+            second = T("Return to the parent folder");
         } else
-            title = menu->review ? "Disc queue" : "Library";
+            title = menu->review ? T("Disc queue") : T("Library");
         if (title) {
             if (!title_length)
                 title_length = menu_title_length(title, chosen ? chosen->is_directory : 1);
@@ -2612,21 +2630,21 @@ static void browser_controls(Menu *menu, const MenuEntry *chosen, size_t total)
     rectangle(menu, 8, 196, 138, 44, BG);
     if (menu->review) {
         if (total)
-            control_badges(menu, 12, 197, "A:Play", 1);
+            control_badges(menu, 12, 197, T("A:Play"), 1);
     } else if (menu->ready && total) {
         if (!chosen)
-            control_badges(menu, 12, 197, "A:Back", 1);
+            control_badges(menu, 12, 197, T("A:Back"), 1);
         else if (!game_entry(menu, chosen))
-            control_badges(menu, 12, 197, "A:Open", 1);
+            control_badges(menu, 12, 197, T("A:Open"), 1);
         else
-            control_badges(menu, 12, 197, menu->playlist.count ? "P:Queue C:Add" : "A:Play C:Queue",
-                           1);
+            control_badges(menu, 12, 197,
+                           menu->playlist.count ? T("P:Queue C:Add") : T("A:Play C:Queue"), 1);
     }
     control_badges(menu, 12, 212,
-                   menu->review || menu->depth || menu->listing.has_parent ? "B:Back L+R:Tools"
-                                                                           : "L+R:Tools",
+                   menu->review || menu->depth || menu->listing.has_parent ? T("B:Back L+R:Tools")
+                                                                           : T("L+R:Tools"),
                    0);
-    button(menu, 12, 226, "Hold P", "Help", 0);
+    button(menu, 12, 226, T("Hold P"), T("Help"), 0);
 }
 /*
  * The browser is drawn in three layers, each with a hash saying what it
@@ -2699,7 +2717,7 @@ static void browser_save(Menu *menu, BrowserFrame *frame, unsigned long shell,
  */
 static void boot_screen(Menu *menu, unsigned long now)
 {
-    const char *status = menu->message ? menu->message : "Loading...";
+    const char *status = menu->message ? T(menu->message) : T("Loading...");
     int margin = menu->config.screen_margin, lit = menu->boot_stage * 4, i;
     unsigned long started = now_ms(menu);
     menu->config.screen_margin = 0;
@@ -2773,8 +2791,8 @@ static void draw_loading_notice(Menu *menu)
     menu->text_cursor = 0;
     menu->text_style = UI_FONT_NORMAL;
     rectangle(menu, 152, 178, 168, 62, BG);
-    label_on(menu, 160, 181, "Reading folder...", AMBER, UI_FONT_NORMAL, BG);
-    label_on(menu, 160, 203, "Please wait", MUTED, UI_FONT_SMALL, BG);
+    label_on(menu, 160, 181, T("Reading folder..."), AMBER, UI_FONT_NORMAL, BG);
+    label_on(menu, 160, 203, T("Please wait"), MUTED, UI_FONT_SMALL, BG);
     DisplayScreen(menu->screen.sc_Screens[menu->screen.sc_curScreen], 0);
     menu->loading_notice = 1;
 }
@@ -2789,16 +2807,17 @@ static const char *browser_message(Menu *menu, char *line, unsigned long now)
     if (!message && menu->notice_active)
         message = menu->notice;
     if (menu->loading) {
-        strcpy(line, "Reading folder...");
+        strcpy(line, T("Reading folder..."));
         message = line;
     }
     if (menu->alphabet_active && !menu->notice_active)
-        message = "Choose a letter. A to jump, B to cancel.";
+        message = T("Choose a letter. A to jump, B to cancel.");
     if (!menu->ready && menu->bus.last_error < 0) {
-        format(line, "Connection error: %08lx", (unsigned long)menu->bus.last_error);
+        format(line, T("Connection error: %08lx"), (unsigned long)menu->bus.last_error);
         message = line;
     }
-    return message;
+    /* Messages are set in English (marked N_) and shown translated. */
+    return message ? T(message) : NULL;
 }
 
 /*
@@ -2974,11 +2993,11 @@ static void draw_heading(Menu *menu, const DrawState *d)
     }
 
     if (menu->review)
-        strcpy(line, "Disc queue");
+        strcpy(line, T("Disc queue"));
     else if (*menu->filter)
-        format(line, "Search: %s", menu->filter);
+        format(line, T("Search: %s"), menu->filter);
     else if (!menu->depth)
-        strcpy(line, "All games");
+        strcpy(line, T("All games"));
     else /* the breadcrumb without its leading "/ " */
         strcpy(line, menu->breadcrumb[0] == '/' && menu->breadcrumb[1] == ' ' ? menu->breadcrumb + 2
                                                                               : menu->breadcrumb);
@@ -3014,10 +3033,11 @@ static void draw_browser_full(Menu *menu, const DrawState *d, BrowserFrame *fram
         for (i = d->start; i < d->total && i < d->start + d->rows; ++i)
             draw_row(menu, i, d->start, d->selected, d->style, d->row_height);
         if (!d->total) {
-            label_on(menu, 16, 62, menu->review ? "No discs queued" : "Nothing here yet", TEXT,
-                     UI_FONT_NORMAL, BG);
-            label_on(menu, 16, 80, *menu->filter ? "Try another name" : "Choose another folder",
-                     MUTED, UI_FONT_SMALL, BG);
+            label_on(menu, 16, 62, menu->review ? T("No discs queued") : T("Nothing here yet"),
+                     TEXT, UI_FONT_NORMAL, BG);
+            label_on(menu, 16, 80,
+                     *menu->filter ? T("Try another name") : T("Choose another folder"), MUTED,
+                     UI_FONT_SMALL, BG);
         }
     }
     /* Button prompts under the list: what A and C do right now, then the
@@ -3243,7 +3263,7 @@ static void load_directory(Menu *menu, size_t selected)
             menu->selected = 0;
     } else {
         menu->view_valid = 0;
-        menu->message = menu->bus.timed_out ? "ODE timeout. Restart console." : menu->ode.error;
+        menu->message = menu->bus.timed_out ? N_("ODE timeout. Restart console.") : menu->ode.error;
     }
     menu->loading = 0;
     update_breadcrumb(menu);
@@ -3275,7 +3295,7 @@ static int recover_library(Menu *menu)
     OdeListing root;
     int result;
     if (!can_recover_library(menu)) {
-        menu->tool_message = "Recovery unavailable. Power cycle console.";
+        menu->tool_message = N_("Recovery unavailable. Power cycle console.");
         return -1;
     }
     ode_listing_init(&root);
@@ -3283,13 +3303,13 @@ static int recover_library(Menu *menu)
     close_full_cover(menu);
     menu->ready = menu->view_valid = 0;
     menu->tools = menu->review = menu->alphabet_active = 0;
-    menu->message = "Returning to library...";
+    menu->message = N_("Returning to library...");
     draw(menu);
     result = ode_recover_root(&menu->ode, menu->root_fingerprint, menu->root_volume, &root);
     if (result) {
         menu->recovery_result = -1;
         menu->ode.navigation_failed = 1;
-        menu->message = "Recovery failed. Power cycle console.";
+        menu->message = N_("Recovery failed. Power cycle console.");
         return -1;
     }
     free_listing(menu);
@@ -3308,7 +3328,7 @@ static int recover_library(Menu *menu)
     update_breadcrumb(menu);
     selection_changed(menu);
     menu->position_dirty = 0;
-    notify(menu, "Recovered. Media off until restart.");
+    notify(menu, N_("Recovered. Media off until restart."));
     return 0;
 }
 
@@ -3386,7 +3406,7 @@ static void refresh_usb_art(Menu *menu)
     }
     /* The indexes and metadata, each only if still connected. */
     message = menu->message;
-    menu->message = "Reading media indexes...";
+    menu->message = N_("Reading media indexes...");
     draw(menu);
     if (menu->config.usb_covers)
         usb_art_index_load(&menu->ode, ode_bus_read_buffer, &menu->usb_art);
@@ -3406,7 +3426,7 @@ static void refresh_usb_art(Menu *menu)
     if (menu->bus.timed_out || menu->ode.navigation_failed) {
         menu->ode.navigation_failed = 1;
         menu->ready = menu->view_valid = 0;
-        menu->message = "Cover I/O failed. Restart console.";
+        menu->message = N_("Cover I/O failed. Restart console.");
     }
 }
 
@@ -3671,7 +3691,7 @@ static void open_full_cover(Menu *menu)
         read.pixels = (unsigned char *)cel->ccb_SourcePtr;
         pause_scroll(menu);
         message = menu->message;
-        menu->message = "Loading cover...";
+        menu->message = N_("Loading cover...");
         draw(menu);
         menu->media_cancelled = 0;
         menu->ode.media_folder = menu->cover_folder;
@@ -3683,7 +3703,7 @@ static void open_full_cover(Menu *menu)
             UnloadCel(cel);
             menu->ode.navigation_failed = 1;
             menu->ready = menu->view_valid = 0;
-            menu->message = "Cover I/O failed. Restart console.";
+            menu->message = N_("Cover I/O failed. Restart console.");
             return;
         }
         if (menu->media_cancelled) {
@@ -3815,7 +3835,7 @@ static void draw_full_cover(Menu *menu)
     }
     /* The side margins beside the 192-pixel art hold the prompts. */
     if (menu->full_view == 1)
-        control_badges(menu, 6, 224, "B:Back", 0);
+        control_badges(menu, 6, 224, T("B:Back"), 0);
     DisplayScreen(menu->screen.sc_Screens[menu->screen.sc_curScreen], 0);
 }
 
@@ -3919,7 +3939,7 @@ static void load_usb_cover(Menu *menu, const MenuEntry *entry, size_t game, cons
     read.pixels = (unsigned char *)cover->ccb_SourcePtr;
     message = menu->message;
     pause_scroll(menu);
-    menu->message = "Loading cover...";
+    menu->message = N_("Loading cover...");
     draw(menu);
     started = now_ms(menu);
     commands = menu->bus.commands;
@@ -3944,7 +3964,7 @@ static void load_usb_cover(Menu *menu, const MenuEntry *entry, size_t game, cons
     if (result == -2 || menu->bus.timed_out) {
         menu->ode.navigation_failed = 1;
         menu->ready = menu->view_valid = 0;
-        menu->message = "Cover I/O failed. Restart console.";
+        menu->message = N_("Cover I/O failed. Restart console.");
     }
 }
 
@@ -4215,7 +4235,7 @@ static void update_preview(Menu *menu)
     read.menu = menu;
     read.file = file;
     message = menu->message;
-    menu->message = "Loading preview... Press to cancel.";
+    menu->message = N_("Loading preview... Press to cancel.");
     menu->tuning = 1;
     menu->tuning_since = now_ms(menu);
     menu->tuning_bytes = menu->tuning_draws = 0;
@@ -4305,14 +4325,14 @@ static void update_preview(Menu *menu)
     menu->preview_load_ms = now_ms(menu) - started;
     menu->preview_commands = menu->bus.commands - commands;
     if (menu->preview_result == -4)
-        notify(menu, "Preview needs more free memory.");
+        notify(menu, N_("Preview needs more free memory."));
     else if (menu->preview_result == -1)
-        notify(menu, "Preview failed. Check diagnostics.");
+        notify(menu, N_("Preview failed. Check diagnostics."));
     if (result == -2 || menu->bus.timed_out || menu->ode.navigation_failed) {
         stop_preview(menu);
         menu->ode.navigation_failed = 1;
         menu->ready = menu->view_valid = 0;
-        menu->message = "Preview I/O failed. Restart console.";
+        menu->message = N_("Preview I/O failed. Restart console.");
     }
     /* Resume only after both buffers and audio are ready, including failures. */
     resume_scroll(menu);
@@ -4338,7 +4358,7 @@ static void show_demo(Menu *menu)
                                          {8, 0, "Super Street Fighter II Turbo.iso"}};
     size_t i;
     if (menu->playlist.count) {
-        menu->message = "P: Review queue before demo";
+        menu->message = N_("P: Review queue before demo");
         return;
     }
     menu->review = 0;
@@ -4350,7 +4370,7 @@ static void show_demo(Menu *menu)
     free_listing(menu);
     menu->listing.entries = (const MenuEntry **)malloc(9 * sizeof(MenuEntry *));
     if (!menu->listing.entries) {
-        menu->message = "Not enough memory";
+        menu->message = N_("Not enough memory");
         return;
     }
     for (i = 0; i < 9; ++i) {
@@ -4359,7 +4379,7 @@ static void show_demo(Menu *menu)
         if (!entry) {
             free_listing(menu);
             menu->ready = 0;
-            menu->message = "Not enough memory";
+            menu->message = N_("Not enough memory");
             return;
         }
         *entry = examples[i];
@@ -4424,21 +4444,21 @@ static void connect_ode(Menu *menu)
     menu->ode.file_path[0] = 0;
     free_listing(menu);
 
-    menu->message = "Connecting to ODE...";
+    menu->message = N_("Connecting to ODE...");
     draw(menu);
     if (menu->bus.request < 0 && ode_bus_open(&menu->bus) < 0) {
-        menu->message = "Cannot open XBUS. C: View demo";
+        menu->message = N_("Cannot open XBUS. C: View demo");
         goto done;
     }
     if (ode_identify(&menu->ode) < 0 || ode_change_directory(&menu->ode, 0) < 0) {
-        menu->message =
-            menu->bus.timed_out ? "No ODE reply. C: View demo" : "ODE not available. C: View demo";
+        menu->message = menu->bus.timed_out ? T("No ODE reply. C: View demo")
+                                            : T("ODE not available. C: View demo");
         goto done;
     }
     boot_step(menu, BOOT_IDENTIFY);
 
     /* The settings, and the copies the Settings screen edits. */
-    menu->message = "Reading USB config...";
+    menu->message = N_("Reading USB config...");
     menu->boot_stage = 2;
     draw(menu);
     if (GetControlPad(1, 0, &pad) >= 0 && (pad.cped_ButtonBits & ControlX))
@@ -4447,6 +4467,7 @@ static void connect_ode(Menu *menu)
         config_result = menu_config_load(&menu->ode, ode_bus_read_buffer, &menu->config);
     menu->config_result = config_result;
     menu_set_hide_adult(menu->config.hide_adult);
+    menu_text_language(menu->config.language);
     menu->skip_usb_art = config_result != 0 || !menu->config.usb_covers;
     menu->settings_folder_workaround = menu->config.folder_workaround;
     menu->settings_usb_covers = menu->config.usb_covers;
@@ -4456,7 +4477,7 @@ static void connect_ode(Menu *menu)
     menu->saved_config = menu->config;
     boot_step(menu, BOOT_CONFIG);
     if (menu->bus.timed_out) {
-        menu->message = "Config I/O failed. Restart console.";
+        menu->message = N_("Config I/O failed. Restart console.");
         goto done;
     }
 
@@ -4478,11 +4499,11 @@ static void connect_ode(Menu *menu)
         load_position(menu);
     boot_step(menu, BOOT_POSITION);
     if (menu->ready && config_result < 0)
-        menu->message = "Config not loaded. Defaults used.";
+        menu->message = N_("Config not loaded. Defaults used.");
     else if (menu->ready && config_result == 1)
-        menu->message = "USB config unsupported. Defaults used.";
+        menu->message = N_("USB config unsupported. Defaults used.");
     else if (menu->ready && config_result == 2)
-        menu->message = "Config skipped. Defaults used.";
+        menu->message = N_("Config skipped. Defaults used.");
 done:
     menu->booting = 0;
     startup_menu = NULL;
@@ -4501,7 +4522,7 @@ static void go_back(Menu *menu)
     parent_id = menu->listing.has_parent ? menu->listing.parent_id : 0xffffffffUL;
     if (ode_change_directory(&menu->ode, parent_id) < 0) {
         menu->ready = 0;
-        menu->message = "Folder I/O failed. Restart console.";
+        menu->message = N_("Folder I/O failed. Restart console.");
         return;
     }
     if (menu->depth)
@@ -4537,7 +4558,7 @@ static void activate(Menu *menu)
         menu->single_disc = 0;
         if (game) {
             if (menu->playlist.count || !menu->playlist.synchronized) {
-                menu->message = "P: Review or clear disc queue";
+                menu->message = N_("P: Review or clear disc queue");
                 return;
             }
             queue_selected_disc(menu);
@@ -4553,13 +4574,13 @@ static void activate(Menu *menu)
         /* An ordinary folder: enter it, remembering where its row was so
          * going back reselects it. */
         if (menu->depth == MAX_DEPTH) {
-            menu->message = "Maximum folder depth reached";
+            menu->message = N_("Maximum folder depth reached");
             return;
         }
         if (ode_enter_directory(&menu->ode, &menu->listing, entry, folder_workaround(menu)) < 0) {
             if (menu->ode.navigation_failed) {
                 menu->ready = 0;
-                menu->message = "Folder I/O failed. Restart console.";
+                menu->message = N_("Folder I/O failed. Restart console.");
             } else
                 menu->message = menu->ode.error;
             return;
@@ -4584,7 +4605,7 @@ static void activate(Menu *menu)
         }
         menu->single_disc = 0;
         if (menu->playlist.count || !menu->playlist.synchronized) {
-            menu->message = "P: Review or clear disc queue";
+            menu->message = N_("P: Review or clear disc queue");
             return;
         }
         {
@@ -4606,7 +4627,7 @@ static void activate(Menu *menu)
 
         /* Launch: past this point the ODE's queue is no longer what the
          * menu believes it is. */
-        menu->message = "Starting game...";
+        menu->message = N_("Starting game...");
         draw(menu);
         menu->playlist.synchronized = 0;
         stop_preview(menu);
@@ -4615,7 +4636,7 @@ static void activate(Menu *menu)
         else {
             menu->launching = 1;
             menu->ready = menu->view_valid = 0;
-            menu->message = "Image mounted. Waiting for boot...";
+            menu->message = N_("Image mounted. Waiting for boot...");
             free_listing(menu);
         }
     }
@@ -4632,24 +4653,24 @@ static void queue_selected_disc(Menu *menu)
     if (!menu->ready || !row_count(menu))
         return;
     if (menu->listing.has_parent && menu->selected == 0) {
-        menu->message = "Select a disc image to queue";
+        menu->message = N_("Select a disc image to queue");
         return;
     }
     entry = browser_entry(menu, menu->selected - (menu->listing.has_parent ? 1 : 0));
     if (directory_path(menu, directory, sizeof(directory)) < 0) {
-        menu->message = "Folder path too long for disc queue";
+        menu->message = N_("Folder path too long for disc queue");
         return;
     }
     game = folder_game(menu, entry, discs);
     if (entry->is_directory && !game) {
-        menu->message = "Select a disc image to queue";
+        menu->message = N_("Select a disc image to queue");
         return;
     }
     /* A folder acting as its game queues its disc, or its whole disc set. */
     for (i = 0; i < (game ? game : 1); ++i) {
         if (strlen(directory) + strlen(entry->name) + (game ? strlen(discs[i]) + 1 : 0) + 2 >
             sizeof(full)) {
-            menu->message = "Folder path too long for disc queue";
+            menu->message = N_("Folder path too long for disc queue");
             return;
         }
         strcpy(full, directory);
@@ -4664,7 +4685,7 @@ static void queue_selected_disc(Menu *menu)
             return;
         }
     }
-    format(menu->status, "Queued disc %lu. P: Review", (unsigned long)menu->playlist.count);
+    format(menu->status, T("Queued disc %lu. P: Review"), (unsigned long)menu->playlist.count);
     notify(menu, menu->status);
 }
 
@@ -4673,7 +4694,7 @@ static void review_queue(Menu *menu)
 {
     menu->review = 1;
     menu->queue_selected = 0;
-    menu->message = menu->playlist.synchronized ? NULL : "Queue uncertain. X:Clear to retry";
+    menu->message = menu->playlist.synchronized ? NULL : N_("Queue uncertain. X:Clear to retry");
     menu->notice_active = 0;
     selection_changed(menu);
 }
@@ -4692,7 +4713,7 @@ static void start_queue(Menu *menu)
         return;
     if (menu->playlist.count && menu->playlist.synchronized)
         stop_preview(menu);
-    menu->message = "Starting first queued disc...";
+    menu->message = N_("Starting first queued disc...");
     draw(menu);
     if (ode_playlist_start(&menu->ode, &menu->playlist) < 0) {
         menu->message = menu->ode.error;
@@ -4700,7 +4721,7 @@ static void start_queue(Menu *menu)
     }
     menu->review = menu->ready = menu->view_valid = 0;
     menu->launching = 1;
-    menu->message = "Image mounted. Waiting for boot...";
+    menu->message = N_("Image mounted. Waiting for boot...");
     free_listing(menu);
 }
 
@@ -4755,12 +4776,12 @@ static int apply_folder_queue(Menu *menu, const MenuEntry *folder, const char *d
     FolderQueue queue;
     int result;
     if (!folder_path) {
-        menu->ode.error = "Not enough queue memory";
+        menu->ode.error = N_("Not enough queue memory");
         return -1;
     }
     if (strlen(directory) + strlen(folder->name) + 2 > FOLDER_PATH_BYTES) {
         free(folder_path);
-        menu->ode.error = "Folder path too long for disc queue";
+        menu->ode.error = N_("Folder path too long for disc queue");
         return -1;
     }
     strcpy(folder_path, directory);
@@ -4768,7 +4789,7 @@ static int apply_folder_queue(Menu *menu, const MenuEntry *folder, const char *d
     strcat(folder_path, folder->name);
 
     ode_playlist_dispose(&menu->group);
-    menu->message = "Applying disc queue...";
+    menu->message = N_("Applying disc queue...");
     draw(menu);
     queue.menu = menu;
     queue.cleared = 0;
@@ -4807,7 +4828,7 @@ static int apply_queue(Menu *menu)
         return -1;
     directory = (char *)malloc(FOLDER_PATH_BYTES);
     if (!directory) {
-        menu->ode.error = "Not enough queue memory";
+        menu->ode.error = N_("Not enough queue memory");
         return -1;
     }
 
@@ -4824,13 +4845,13 @@ static int apply_queue(Menu *menu)
     }
 
     /* Check every queued disc is still there. */
-    menu->message = "Checking queued game paths...";
+    menu->message = N_("Checking queued game paths...");
     draw(menu);
     if (!directory_path(menu, directory, FOLDER_PATH_BYTES))
         local = library_current_files(&menu->listing, directory, menu->playlist.paths,
                                       menu->playlist.count, entries);
     if (local < 0) {
-        menu->ode.error = "Queued path is missing";
+        menu->ode.error = N_("Queued path is missing");
         goto checked;
     }
     if (local) {
@@ -4839,7 +4860,7 @@ static int apply_queue(Menu *menu)
             goto checked;
         if (library_current_files(&fresh, directory, menu->playlist.paths, menu->playlist.count,
                                   entries) != 1) {
-            menu->ode.error = "Queued path is missing";
+            menu->ode.error = N_("Queued path is missing");
             goto checked;
         }
     } else {
@@ -4851,7 +4872,7 @@ static int apply_queue(Menu *menu)
 
     /* Replace the ODE's queue. */
     ode_playlist_dispose(&menu->group);
-    menu->message = "Applying disc queue...";
+    menu->message = N_("Applying disc queue...");
     draw(menu);
     if (ode_playlist_clear(&menu->ode, &menu->group) < 0)
         goto uncertain;
@@ -4917,7 +4938,7 @@ static void jump_letter(Menu *menu, int letter)
             return;
         }
     }
-    menu->message = "No entries for that letter.";
+    menu->message = N_("No entries for that letter.");
 }
 /* Moves the focus to the alphabet strip, starting at the selected row's
  * letter. */
@@ -4976,7 +4997,7 @@ static int alphabet_input(Menu *menu, u32 pressed)
             resume_scroll(menu);
             jump_letter(menu, menu->jump_letter);
         } else
-            notify(menu, "No entries for that letter.");
+            notify(menu, N_("No entries for that letter."));
     }
     return 1;
 }
@@ -5093,7 +5114,7 @@ static int text_at_root(Menu *menu, const char *name, const char *write, char *r
                          text_at_root_callback, &op);
     if (result == -2 || menu->bus.timed_out || menu->ode.navigation_failed) {
         menu->ready = menu->view_valid = 0;
-        menu->message = "USB I/O failed. Restart console.";
+        menu->message = N_("USB I/O failed. Restart console.");
         result = -1;
     }
     if (length)
@@ -5124,7 +5145,7 @@ static int text_beside(Menu *menu, const MenuEntry *entry, const char *name, cha
     menu->ode.media_folder = NULL;
     if (result == -2 || menu->bus.timed_out || menu->ode.navigation_failed) {
         menu->ready = menu->view_valid = 0;
-        menu->message = "USB I/O failed. Restart console.";
+        menu->message = N_("USB I/O failed. Restart console.");
         result = -1;
     }
     if (length)
@@ -5246,7 +5267,7 @@ static void remember_position(Menu *menu, int force)
         if (menu_position_format(position, data, POSITION_BYTES) < 0 ||
             text_at_root(menu, "last-position.txt", data, NULL, 0, NULL) < 0) {
             menu->position_result = -1;
-            notify(menu, "Position not saved. See diagnostics.");
+            notify(menu, N_("Position not saved. See diagnostics."));
         } else {
             menu->last_position = *position;
             menu->position_result = 1;
@@ -5318,7 +5339,7 @@ static void record_launch(Menu *menu, const char *path)
     char *snapshot = NULL;
     const char *base;
     int result;
-    menu->message = "Saving launch history...";
+    menu->message = N_("Saving launch history...");
     draw(menu);
     remember_position(menu, 1);
     if (menu->config_result != 0 || !menu->ready || menu->demo || menu->bus.timed_out ||
@@ -5360,7 +5381,7 @@ static void record_launch(Menu *menu, const char *path)
         menu->recent_result = result ? -1 : 1;
     if (result == -2 || menu->bus.timed_out || menu->ode.navigation_failed) {
         menu->ready = menu->view_valid = 0;
-        menu->message = "History I/O failed. Restart console.";
+        menu->message = N_("History I/O failed. Restart console.");
     }
 }
 /* Opens the Recent screen: reads recent.txt, leaving out games in hidden
@@ -5386,9 +5407,9 @@ static void open_recent(Menu *menu)
                 menu->recent_valid = 0;
             }
         }
-        menu->tool_message = menu->recent.count ? NULL : "No recent launch selections.";
+        menu->tool_message = menu->recent.count ? NULL : N_("No recent launch selections.");
     } else
-        menu->tool_message = "Recent list unavailable or invalid.";
+        menu->tool_message = N_("Recent list unavailable or invalid.");
     free(data);
     menu->tool_selected = 0;
 }
@@ -5544,12 +5565,12 @@ static void export_diagnostics(Menu *menu)
     i = strlen(data);
     memset(data + i, '\n', sizeof(data) - 1 - i);
     data[sizeof(data) - 1] = 0;
-    menu->tool_message = "Writing / verifying diagnostics...";
+    menu->tool_message = N_("Writing / verifying diagnostics...");
     draw(menu);
     menu->diagnostics_result =
         text_at_root(menu, "diagnostics.txt", data, NULL, 0, NULL) < 0 ? -1 : 1;
-    menu->tool_message = menu->diagnostics_result > 0 ? "Saved USB diagnostics.txt."
-                                                      : "USB export unavailable or failed.";
+    menu->tool_message = menu->diagnostics_result > 0 ? N_("Saved USB diagnostics.txt.")
+                                                      : N_("USB export unavailable or failed.");
 }
 /* ==== Favorites and opening saved games ==== */
 
@@ -5585,32 +5606,32 @@ static void open_favorites(Menu *menu)
     }
     if (menu->demo || !menu->ready || menu->ode.navigation_failed || menu->bus.timed_out ||
         menu->config_result == 2 || strcmp(menu->ode.identity, "LOCODE")) {
-        menu->tool_message = "USB favorites unavailable.";
+        menu->tool_message = N_("USB favorites unavailable.");
         return;
     }
     if (!menu->depth) {
         size_t i;
         for (i = 0; i < menu->listing.count; ++i)
             if (!(menu->listing.entries[i]->toc_id & 0xffffffUL)) {
-                menu->tool_message = "Enter a USB volume first.";
+                menu->tool_message = N_("Enter a USB volume first.");
                 return;
             }
     }
     current_route(menu, route);
-    menu->tool_message = "Reading USB favorites...";
+    menu->tool_message = N_("Reading USB favorites...");
     draw(menu);
     result = art_at_root(&menu->ode, route, menu->depth, &menu->listing, folder_workaround(menu),
                          favorites_read, menu);
     menu->tool_selected = 0;
     if (result == -2 || menu->bus.timed_out || menu->ode.navigation_failed) {
         menu->ready = menu->view_valid = 0;
-        menu->tool_message = "USB I/O failed. Restart console.";
+        menu->tool_message = N_("USB I/O failed. Restart console.");
     } else
         menu->tool_message =
-            result ? "Invalid favorites.txt on USB."
+            result ? T("Invalid favorites.txt on USB.")
                    : (menu_favorites_visible_count(&menu->favorites, menu->config.hide_adult)
                           ? NULL
-                          : "C adds the selected browser game.");
+                          : T("C adds the selected browser game."));
 }
 /* An addition to or removal from favorites.txt, through art_at_root. */
 typedef struct FavoritesEdit {
@@ -5664,14 +5685,14 @@ static void edit_favorites(Menu *menu, int remove)
     int result;
     if (menu->demo || !menu->ready || menu->ode.navigation_failed || menu->bus.timed_out ||
         menu->config_result == 2 || strcmp(menu->ode.identity, "LOCODE")) {
-        menu->tool_message = "USB favorites unavailable.";
+        menu->tool_message = N_("USB favorites unavailable.");
         return;
     }
     if (remove) {
         if (!menu->favorites_valid ||
             menu->tool_selected >=
                 menu_favorites_visible_count(&menu->favorites, menu->config.hide_adult)) {
-            menu->tool_message = "Select a favorite to remove.";
+            menu->tool_message = N_("Select a favorite to remove.");
             return;
         }
         strcpy(path, menu->favorites.paths[menu_favorites_visible_index(
@@ -5710,28 +5731,30 @@ static void edit_favorites(Menu *menu, int remove)
     edit.menu = menu;
     edit.path = path;
     edit.remove = remove;
-    menu->tool_message = "Saving / verifying favorites...";
+    menu->tool_message = N_("Saving / verifying favorites...");
     draw(menu);
     result = art_at_root(&menu->ode, route, menu->depth, &menu->listing, folder_workaround(menu),
                          favorites_edit_at_root, &edit);
     if (result == -2 || menu->bus.timed_out || menu->ode.navigation_failed) {
         menu->ready = menu->view_valid = 0;
-        menu->tool_message = "USB I/O failed. Restart console.";
+        menu->tool_message = N_("USB I/O failed. Restart console.");
     } else if (result < 0)
-        menu->tool_message = "Favorites not saved. Check USB file.";
+        menu->tool_message = N_("Favorites not saved. Check USB file.");
     else if (result == 1)
-        menu->tool_message = remove ? "Favorite already removed." : "Game is already a favorite.";
+        menu->tool_message =
+            remove ? N_("Favorite already removed.") : N_("Game is already a favorite.");
     else
-        menu->tool_message = remove ? "Favorite removed and saved." : "Favorite added and saved.";
+        menu->tool_message =
+            remove ? N_("Favorite removed and saved.") : N_("Favorite added and saved.");
     visible = menu_favorites_visible_count(&menu->favorites, menu->config.hide_adult);
     if (menu->tool_selected >= visible)
         menu->tool_selected = visible ? visible - 1 : 0;
     return;
 select_game:
-    menu->tool_message = "Select a game in the browser first.";
+    menu->tool_message = N_("Select a game in the browser first.");
     return;
 too_long:
-    menu->tool_message = "Favorite path is too long.";
+    menu->tool_message = N_("Favorite path is too long.");
 }
 /* Whether a saved /Storage disc path lies in a folder that acts as its game;
  * if so, `folder` receives that folder's path. The metadata's paths start
@@ -5777,11 +5800,11 @@ static void open_saved_path(Menu *menu, const char *path)
         return;
     location = (LibraryLocation *)malloc(sizeof(*location));
     if (!location) {
-        menu->tool_message = "Not enough memory.";
+        menu->tool_message = N_("Not enough memory.");
         return;
     }
     current_route(menu, route);
-    menu->tool_message = "Opening saved game folder...";
+    menu->tool_message = N_("Opening saved game folder...");
     draw(menu);
     if (saved_game_folder(menu, path, folder, sizeof(folder)))
         result = library_select_directory(&menu->ode, route, menu->depth, &menu->listing,
@@ -5792,8 +5815,8 @@ static void open_saved_path(Menu *menu, const char *path)
     if (!result)
         adopt_location(menu, location);
     else {
-        menu->tool_message =
-            result == -2 ? "Folder I/O failed. Restart console." : "Saved path not found on USB.";
+        menu->tool_message = result == -2 ? T("Folder I/O failed. Restart console.")
+                                          : T("Saved path not found on USB.");
         if (result == -2)
             menu->ready = menu->view_valid = 0;
     }
@@ -5827,6 +5850,7 @@ static void open_favorite(Menu *menu)
 enum {
     SETTING_MARGIN,
     SETTING_LARGE_TITLES,
+    SETTING_LANGUAGE,
     SETTING_FOLDER_WORKAROUND,
     SETTING_COVERS,
     SETTING_VIDEO_PREVIEWS,
@@ -5868,7 +5892,8 @@ static int config_dirty(const Menu *menu)
            current.remember_position != saved->remember_position ||
            current.recent_games != saved->recent_games ||
            current.video_previews != saved->video_previews ||
-           current.preview_sound != saved->preview_sound || current.hide_adult != saved->hide_adult;
+           current.preview_sound != saved->preview_sound ||
+           current.hide_adult != saved->hide_adult || current.language != saved->language;
 }
 /* Puts every setting back as last saved (X in Settings). */
 static void discard_config(Menu *menu)
@@ -5878,12 +5903,14 @@ static void discard_config(Menu *menu)
     menu_set_hide_adult(menu->config.hide_adult);
     menu->config.screen_margin = menu->saved_config.screen_margin;
     menu->config.large_titles = menu->saved_config.large_titles;
+    menu->config.language = menu->saved_config.language;
+    menu_text_language(menu->config.language);
     menu->settings_folder_workaround = menu->saved_config.folder_workaround;
     menu->settings_usb_covers = menu->saved_config.usb_covers;
     menu->settings_remember_position = menu->saved_config.remember_position;
     menu->settings_recent_games = menu->saved_config.recent_games;
     menu->settings_video_previews = menu->saved_config.video_previews;
-    menu->tool_message = "Unsaved settings discarded.";
+    menu->tool_message = N_("Unsaved settings discarded.");
     selection_changed(menu);
 }
 /* Saves the settings to ohmy3do.ini (C in Settings). Refused if the file
@@ -5891,12 +5918,12 @@ static void discard_config(Menu *menu)
 static void save_config(Menu *menu)
 {
     if (menu->config_result != 0) {
-        menu->tool_message = "Load a valid INI before saving.";
+        menu->tool_message = N_("Load a valid INI before saving.");
         return;
     }
     if (!save_root_operation(menu, SAVE_SETTINGS, MENU_CONFIG_NAME, NULL)) {
         settings_values(menu, &menu->saved_config);
-        menu->tool_message = "Saved. Non-display: after reboot.";
+        menu->tool_message = N_("Saved. Non-display: after reboot.");
     }
 }
 /*
@@ -5906,7 +5933,7 @@ static void save_config(Menu *menu)
  */
 static void change_config(Menu *menu, int direction)
 {
-    menu->tool_message = "Changed. C:Save to USB";
+    menu->tool_message = N_("Changed. C:Save to USB");
     switch (menu->tool_selected) {
     case SETTING_SAVE:
         save_config(menu);
@@ -5918,7 +5945,7 @@ static void change_config(Menu *menu, int direction)
         menu->tools = TOOL_CATEGORIES;
         menu->tool_selected = 0;
         menu->tool_message =
-            menu->categories_valid ? NULL : "Invalid categories.json. Repair on PC.";
+            menu->categories_valid ? NULL : T("Invalid categories.json. Repair on PC.");
         return;
     case SETTING_VIDEO_PREVIEWS:
         menu->settings_video_previews = !menu->settings_video_previews;
@@ -5929,6 +5956,12 @@ static void change_config(Menu *menu, int direction)
         break;
     case SETTING_LARGE_TITLES:
         menu->config.large_titles = !menu->config.large_titles;
+        break;
+    case SETTING_LANGUAGE:
+        /* Takes effect at once, like the other display settings. */
+        menu->config.language =
+            (menu->config.language + direction + MENU_LANGUAGE_LAST + 1) % (MENU_LANGUAGE_LAST + 1);
+        menu_text_language(menu->config.language);
         break;
     case SETTING_FOLDER_WORKAROUND:
         menu->settings_folder_workaround = (menu->settings_folder_workaround + 1) % 3;
@@ -5967,7 +6000,7 @@ static void cancel_favorites_move(Menu *menu)
     if (result < 0)
         menu->favorites_valid = 0;
     menu->tool_message =
-        result < 0 ? "Reload favorites before opening." : "Local ordering edits discarded.";
+        result < 0 ? T("Reload favorites before opening.") : T("Local ordering edits discarded.");
 }
 /* Starts reordering favorites (R), keeping the list as it is now so the
  * save can check nobody changed the file meanwhile, and so B can undo. */
@@ -5975,7 +6008,7 @@ static void begin_favorites_move(Menu *menu)
 {
     if (!menu->favorites_valid ||
         !menu_favorites_visible_count(&menu->favorites, menu->config.hide_adult)) {
-        menu->tool_message = "No favorites to move.";
+        menu->tool_message = N_("No favorites to move.");
         return;
     }
     menu->favorites_original = (char *)malloc(FAVORITES_BYTES);
@@ -5983,7 +6016,7 @@ static void begin_favorites_move(Menu *menu)
         menu_favorites_format(&menu->favorites, menu->favorites_original, FAVORITES_BYTES) < 0) {
         free(menu->favorites_original);
         menu->favorites_original = NULL;
-        menu->tool_message = "Not enough memory.";
+        menu->tool_message = N_("Not enough memory.");
         return;
     }
     menu->favorites_move = 1;
@@ -6006,7 +6039,7 @@ static void save_favorites_order(Menu *menu)
         menu_favorites_format(&current, latest, FAVORITES_BYTES) < 0)
         goto done;
     if (strcmp(latest, menu->favorites_original)) {
-        menu->tool_message = "USB list changed. Cancel and reload.";
+        menu->tool_message = N_("USB list changed. Cancel and reload.");
         result = 1;
         goto done;
     }
@@ -6017,11 +6050,11 @@ static void save_favorites_order(Menu *menu)
     free(menu->favorites_original);
     menu->favorites_original = NULL;
     menu->favorites_move = 0;
-    menu->tool_message = "Favorite order saved and verified.";
+    menu->tool_message = N_("Favorite order saved and verified.");
     result = 0;
 done:
     if (result < 0)
-        menu->tool_message = "Favorite order not saved.";
+        menu->tool_message = N_("Favorite order not saved.");
     menu_favorites_free(&current);
     free(latest);
     free(desired);
@@ -6045,7 +6078,7 @@ static int search_progress(void *context, size_t games)
     }
     if (now_ms(menu) - menu->search_redraw >= 150UL) {
         (void)games;
-        strcpy(menu->status, "Loading search index... B cancels");
+        strcpy(menu->status, T("Loading search index... B cancels"));
         menu->tool_message = menu->status;
         draw(menu);
         menu->search_redraw = now_ms(menu);
@@ -6094,28 +6127,28 @@ static void search_library(Menu *menu, int rebuild)
     int result = 0;
     size_t i;
     if (menu->demo) {
-        menu->tool_message = "Library search needs an ODE.";
+        menu->tool_message = N_("Library search needs an ODE.");
         return;
     }
     if (menu->config_result != 0 || strcmp(menu->ode.identity, "LOCODE")) {
-        menu->tool_message = "Search needs a valid USB config.";
+        menu->tool_message = N_("Search needs a valid USB config.");
         return;
     }
     if (!menu->ready || menu->bus.timed_out || menu->ode.navigation_failed) {
-        menu->tool_message = "ODE unavailable. Restart console.";
+        menu->tool_message = N_("ODE unavailable. Restart console.");
         return;
     }
     if (!menu->depth)
         for (i = 0; i < menu->listing.count; ++i)
             if (menu->listing.entries[i]->is_directory &&
                 !(menu->listing.entries[i]->toc_id & 0xffffffUL)) {
-                menu->tool_message = "Open a USB drive before searching.";
+                menu->tool_message = N_("Open a USB drive before searching.");
                 return;
             }
     if (!menu->catalog.valid || rebuild || menu->catalog_volume != volume) {
         read = (SearchIndexRead *)malloc(sizeof(*read));
         if (!read) {
-            menu->tool_message = "Not enough search memory.";
+            menu->tool_message = N_("Not enough search memory.");
             return;
         }
         read->menu = menu;
@@ -6127,7 +6160,7 @@ static void search_library(Menu *menu, int rebuild)
         stop_preview(menu);
         current_route(menu, route);
         menu->search_redraw = 0;
-        menu->tool_message = "Loading search index... B cancels";
+        menu->tool_message = N_("Loading search index... B cancels");
         draw(menu);
         result = art_at_root(&menu->ode, route, menu->depth, &menu->listing,
                              folder_workaround(menu), read_search_index, read);
@@ -6135,10 +6168,10 @@ static void search_library(Menu *menu, int rebuild)
         if (result) {
             menu->tool_message =
                 result == 1
-                    ? "Search canceled."
-                    : (result == -2 ? "Folder I/O failed. Restart console."
-                                    : (result == -3 ? "Not enough search memory."
-                                                    : "Run index-media.py on the USB drive."));
+                    ? N_("Search canceled.")
+                    : (result == -2 ? T("Folder I/O failed. Restart console.")
+                                    : (result == -3 ? T("Not enough search memory.")
+                                                    : T("Run index-media.py on the USB drive.")));
             if (result == -2 || menu->bus.timed_out || menu->ode.navigation_failed)
                 menu->ready = menu->view_valid = 0;
             return;
@@ -6220,7 +6253,7 @@ static Color tool_row(Menu *menu, int y, int selected)
  * green. Words without a colon continue the previous action ("A:Back up one"). */
 static void control_badges(Menu *menu, int x, int y, const char *controls, int lit)
 {
-    char key[16], action[40];
+    char key[16], action[80];
     int first = lit;
     while (*controls) {
         const char *colon = strchr(controls, ':'), *next;
@@ -6329,7 +6362,7 @@ static void slot_search(Menu *menu)
     if (!save_root_operation(menu, SAVE_SEARCH_CATALOG, NULL, NULL)) {
         menu->slot_filtered = 1;
         menu->tools = TOOL_SLOTS;
-        menu->tool_message = menu->slot_results.count ? NULL : "No matching indexed slots.";
+        menu->tool_message = menu->slot_results.count ? NULL : N_("No matching indexed slots.");
     } else {
         menu->tools = TOOL_SLOT_FIND;
     }
@@ -6362,7 +6395,7 @@ static void finish_copy(Menu *menu)
  * across calls; only those on the current page (10 rows) are drawn. */
 static void game_details_text(Menu *menu, const char *value, size_t *row, Color ink)
 {
-    char line[97];
+    char line[193];
     size_t length, take;
     if (!value || !*value)
         return;
@@ -6402,12 +6435,12 @@ static void draw_game_details(Menu *menu)
     const LibraryGameInfo *info;
     const char *discs[ODE_MAX_DISCS];
     size_t row = 0, count, i;
-    char line[80];
+    char line[160];
     static char path[ENTRY_PATH_BYTES];
     if (row_count(menu) && !(menu->listing.has_parent && !menu->selected) && !menu->review)
         entry = browser_entry(menu, menu->selected - (menu->listing.has_parent ? 1 : 0));
     if (!entry) {
-        tool_line(menu, 0, "Select a game or folder first.", MUTED);
+        tool_line(menu, 0, T("Select a game or folder first."), MUTED);
         menu->game_details_pages = 1;
         return;
     }
@@ -6421,11 +6454,11 @@ static void draw_game_details(Menu *menu)
         menu,
         *menu->game_description
             ? menu->game_description
-            : "No description available. Prepare game information in the desktop app.",
+            : T("No description available. Prepare game information in the desktop app."),
         &row, TEXT);
-    game_details_text(menu, "Original name:", &row, ACCENT);
+    game_details_text(menu, T("Original name:"), &row, ACCENT);
     game_details_text(menu, entry->name, &row, TEXT);
-    game_details_text(menu, "Location:", &row, ACCENT);
+    game_details_text(menu, T("Location:"), &row, ACCENT);
     if (!directory_path(menu, path, sizeof(path)))
         game_details_text(menu, path, &row, TEXT);
     else
@@ -6433,12 +6466,12 @@ static void draw_game_details(Menu *menu)
             game_details_text(menu, menu->path[i], &row, TEXT);
     count = folder_game(menu, entry, discs);
     if (count) {
-        format(line, "Discs: %lu", (unsigned long)count);
+        format(line, T("Discs: %lu"), (unsigned long)count);
         game_details_text(menu, line, &row, ACCENT);
         for (i = 0; i < count; ++i)
             game_details_text(menu, discs[i], &row, TEXT);
     } else
-        game_details_text(menu, entry->is_directory ? "Folder" : "Disc image", &row, MUTED);
+        game_details_text(menu, entry->is_directory ? T("Folder") : T("Disc image"), &row, MUTED);
     menu->game_details_pages = (row + 9) / 10;
     format(line, "%lu / %lu", (unsigned long)(menu->game_details_page + 1),
            (unsigned long)menu->game_details_pages);
@@ -6492,7 +6525,7 @@ static int open_hex(Menu *menu)
 {
     save_archive_free(&menu->hex_archive);
     if (save_archive_build(&menu->hex_archive, menu->backup.entries, menu->backup.count) < 0) {
-        menu->tool_message = "Cannot prepare editor copy.";
+        menu->tool_message = N_("Cannot prepare editor copy.");
         return -1;
     }
     menu->hex_original = menu->backup;
@@ -6524,10 +6557,10 @@ static void draw_hex(Menu *menu)
 {
     const SaveEntry *entry = &menu->hex_archive.entries[menu->save_selected];
     size_t start = menu->hex_offset / 32 * 32, i;
-    char line[80];
+    char line[160];
     format(line, "%.31s%s", entry->name, menu->hex_dirty ? " *" : "");
     tool_line(menu, 0, line, TEXT);
-    format(line, "%lu bytes / offset %04lx", (unsigned long)entry->size,
+    format(line, T("%lu bytes / offset %04lx"), (unsigned long)entry->size,
            (unsigned long)menu->hex_offset);
     tool_line(menu, 1, line, MUTED);
     for (i = start; i < entry->size && i < start + 32; ++i) {
@@ -6544,12 +6577,13 @@ static void draw_hex(Menu *menu)
                  selected ? ACCENT : SELECT);
     }
     if (!entry->size)
-        tool_line(menu, 3, "This save is empty.", MUTED);
+        tool_line(menu, 3, T("This save is empty."), MUTED);
     tool_line(menu, 8,
-              menu->hex_editing ? (menu->hex_nibble ? "Editing low nibble" : "Editing high nibble")
-                                : "Edits stay in this copy until saved.",
+              menu->hex_editing
+                  ? (menu->hex_nibble ? T("Editing low nibble") : T("Editing high nibble"))
+                  : T("Edits stay in this copy until saved."),
               TEXT);
-    tool_line(menu, 9, "Raw edits need game checksums.", AMBER);
+    tool_line(menu, 9, T("Raw edits need game checksums."), AMBER);
 }
 /*
  * The hex editor's buttons. Moving: the pad moves the cursor by a byte or a
@@ -6595,7 +6629,7 @@ static void hex_input(Menu *menu, u32 pressed)
     if (pressed & ControlC) {
         save_archive_free(&menu->pending);
         if (save_archive_build(&menu->pending, entry, 1) < 0) {
-            menu->tool_message = "Cannot prepare edited backup.";
+            menu->tool_message = N_("Cannot prepare edited backup.");
             return;
         }
         menu->backup_merge = 1;
@@ -6646,12 +6680,12 @@ static void draw_cheats(Menu *menu)
     const SaveEntry *entry = &menu->hex_archive.entries[menu->save_selected];
     const SaveCheatProfile *p = save_cheats_find(entry);
     size_t i, count, start;
-    char line[80];
+    char line[160];
     if (!p) {
-        tool_line(menu, 2, "No verified profile matches this save.", AMBER);
+        tool_line(menu, 2, T("No verified profile matches this save."), AMBER);
         return;
     }
-    format(line, "%.22s / %s%s", p->game, save_cheats_external() ? "USB database" : "bundled",
+    format(line, "%.22s / %s%s", p->game, save_cheats_external() ? T("USB database") : T("bundled"),
            menu->hex_dirty ? " *" : "");
     tool_line(menu, 0, line, TEXT);
     count = p->preset_count + p->field_count;
@@ -6672,20 +6706,21 @@ static void draw_cheats(Menu *menu)
     if (menu->cheat_selected < p->preset_count) {
         const SaveCheatPreset *preset = &p->presets[menu->cheat_selected];
         if (preset->additional_count)
-            format(line, "%lu fields / first offset %04lx",
+            format(line, T("%lu fields / first offset %04lx"),
                    (unsigned long)preset->additional_count + 1,
                    (unsigned long)p->fields[preset->field].offset);
         else
-            format(line, "Offset %04lx -> %lu", (unsigned long)p->fields[preset->field].offset,
+            format(line, T("Offset %04lx -> %lu"), (unsigned long)p->fields[preset->field].offset,
                    preset->value);
     } else {
         const SaveCheatField *field = &p->fields[menu->cheat_selected - p->preset_count];
-        format(line, "Offset %04lx: %lu-%lu", (unsigned long)field->offset, field->min, field->max);
+        format(line, T("Offset %04lx: %lu-%lu"), (unsigned long)field->offset, field->min,
+               field->max);
     }
     tool_line(menu, 8, line, MUTED);
     tool_line(menu, 9,
-              p->checksum_kind ? "Game checksum updated automatically."
-                               : "Other save bits stay unchanged.",
+              p->checksum_kind ? T("Game checksum updated automatically.")
+                               : T("Other save bits stay unchanged."),
               ACCENT);
 }
 /* Known values' buttons: Up/Down choose, A applies a preset, Left/Right
@@ -6736,66 +6771,67 @@ static const char *tools_title(Menu *menu)
 {
     switch (menu->tools) {
     case TOOL_CHEATS:
-        return "Known values & cheats";
+        return T("Known values & cheats");
     case TOOL_HEX:
-        return "Hex editor / USB copy";
+        return T("Hex editor / USB copy");
     case TOOL_HEX_DISCARD:
-        return "Discard edits?";
+        return T("Discard edits?");
     case TOOL_SAVES:
-        return "Save Manager";
+        return T("Save Manager");
     case TOOL_SLOTS:
-        return menu->compare_choosing ? "Compare: choose second slot"
-               : menu->backup_mode    ? "Choose backup slot"
-                                      : "Save Manager";
+        return menu->compare_choosing ? T("Compare: choose second slot")
+               : menu->backup_mode    ? T("Choose backup slot")
+                                      : T("Save Manager");
     case TOOL_SLOT_NAME:
-        return "Name backup slot";
+        return T("Name backup slot");
     case TOOL_SLOT_FIND:
     case TOOL_SLOT_QUERY:
-        return "Find backup slots";
+        return T("Find backup slots");
     case TOOL_COMPARE:
     case TOOL_COMPARE_BYTES:
-        return "Compare backups";
+        return T("Compare backups");
     case TOOL_ARCHIVE:
-        return "Backup contents";
+        return T("Backup contents");
     case TOOL_HELP:
-        return "Controls & help";
+        return T("Controls & help");
     case TOOL_DIAG:
-        return "Diagnostics";
+        return T("Diagnostics");
     case TOOL_CONFIRM_BACKUP:
     case TOOL_CONFIRM_RESTORE:
-        return "Confirm action";
+        return T("Confirm action");
     case TOOL_FAVORITES:
-        return menu->favorites_move ? "Move favorite" : "Favorites";
+        return menu->favorites_move ? T("Move favorite") : T("Favorites");
     case TOOL_CATEGORIES:
-        return "Show / hide categories";
+        return T("Show / hide categories");
     case TOOL_CONFIG:
-        return config_dirty(menu) ? "Settings / unsaved" : "Settings";
+        return config_dirty(menu) ? T("Settings / unsaved") : T("Settings");
     case TOOL_RECENT:
-        return "Recent games";
+        return T("Recent games");
     case TOOL_FIND:
-        return "Find a game";
+        return T("Find a game");
     case TOOL_RESULTS:
-        return "Search results";
+        return T("Search results");
     case TOOL_GAME_DETAILS:
-        return "Game details";
+        return T("Game details");
     case TOOL_BACKUP_DETAILS:
-        return menu->details_new ? "New backup contents" : "Existing slot contents";
+        return menu->details_new ? T("New backup contents") : T("Existing slot contents");
     default:
-        return "Menu";
+        return T("Menu");
     }
 }
 
 /* The Tools menu itself: seven buttons in two columns. */
 static void draw_tools_home(Menu *menu)
 {
-    static const char *items[] = {"Save Manager", "Favorites",    "Settings",   "Help & controls",
-                                  "Diagnostics",  "Recent games", "Find a game"};
+    static const char *items[] = {N_("Save Manager"),    N_("Favorites"),   N_("Settings"),
+                                  N_("Help & controls"), N_("Diagnostics"), N_("Recent games"),
+                                  N_("Find a game")};
     size_t i;
     for (i = 0; i < 7; ++i) {
         int x = 18 + (i / 4) * 144, y = 84 + (i % 4) * 28;
         int active = i == menu->tool_selected;
         rectangle(menu, x, y, 138, 24, active ? ACCENT : SELECT);
-        label_on(menu, x + 9, y + 5, i == 2 && config_dirty(menu) ? "Settings *" : items[i],
+        label_on(menu, x + 9, y + 5, i == 2 && config_dirty(menu) ? T("Settings *") : T(items[i]),
                  active ? INK : TEXT, UI_FONT_NORMAL, active ? ACCENT : SELECT);
     }
 }
@@ -6814,7 +6850,7 @@ static int save_manager_tab(Menu *menu)
  */
 static void draw_tool_list(Menu *menu)
 {
-    char line[80];
+    char line[160];
     int tabs = save_manager_tab(menu);
     SaveArchive *archive =
         menu->tools == TOOL_SAVES
@@ -6833,9 +6869,9 @@ static void draw_tool_list(Menu *menu)
         int usb = menu->tools == TOOL_SLOTS;
         rectangle(menu, 18, 82, 138, 14, usb ? SELECT : ACCENT);
         rectangle(menu, 162, 82, 138, 14, usb ? ACCENT : SELECT);
-        label_on(menu, 24, 85, "Console saves", usb ? TEXT : INK, UI_FONT_SMALL,
+        label_on(menu, 24, 85, T("Console saves"), usb ? TEXT : INK, UI_FONT_SMALL,
                  usb ? SELECT : ACCENT);
-        label_on(menu, 168, 85, "USB backups", usb ? INK : TEXT, UI_FONT_SMALL,
+        label_on(menu, 168, 85, T("USB backups"), usb ? INK : TEXT, UI_FONT_SMALL,
                  usb ? ACCENT : SELECT);
     }
 
@@ -6886,26 +6922,27 @@ static void draw_tool_list(Menu *menu)
     if (!count)
         tool_line(menu, tabs ? 3 : 2,
                   (menu->tools == TOOL_FAVORITES || menu->tools == TOOL_RECENT)
-                      ? "No games listed."
+                      ? T("No games listed.")
                       : (menu->tools == TOOL_BACKUP_DETAILS && !menu->backup_slot_valid
-                             ? "Empty or invalid backup slot."
-                             : "No saves to display."),
+                             ? T("Empty or invalid backup slot.")
+                             : T("No saves to display.")),
                   MUTED);
 
     /* Below the list: NVRAM use, or where in the list we are. */
     if (menu->tools == TOOL_SAVES) {
-        format(line, "%lu used %lu free", menu->nvram_info.used_bytes, menu->nvram_info.free_bytes);
+        format(line, T("%lu used %lu free"), menu->nvram_info.used_bytes,
+               menu->nvram_info.free_bytes);
         text(menu, 298 - ui_font_width(line, UI_FONT_SMALL), 66, line, MUTED);
         if (count)
-            format(line, "%lu files  File: %.31s", (unsigned long)count,
+            format(line, T("%lu files  File: %.31s"), (unsigned long)count,
                    archive->entries[menu->tool_selected].name);
         else
-            format(line, "0 files");
+            format(line, T("0 files"));
         text(menu, 22, 188, line, MUTED);
         return;
     }
     if (menu->tools == TOOL_SLOTS && menu->slot_filtered) {
-        format(line, "%lu matches / %lu-%lu", menu->slot_results.total,
+        format(line, T("%lu matches / %lu-%lu"), menu->slot_results.total,
                menu->slot_results.count ? menu->slot_results.offset + 1 : 0,
                menu->slot_results.offset + (unsigned long)menu->slot_results.count);
         if (menu->slot_results.count) {
@@ -6914,7 +6951,7 @@ static void draw_tool_list(Menu *menu)
             scroll_label(menu, 22, 198, 276, hint, strlen(hint), UI_FONT_SMALL, MUTED, PANEL, 0);
         }
     } else if (menu->tools == TOOL_SLOTS)
-        format(line, "Slots %lu-%lu / L R:page", menu->slot_page * 8 + 1,
+        format(line, T("Slots %lu-%lu / L R:page"), menu->slot_page * 8 + 1,
                menu->slot_page * 8 + (slot_count(menu) > 8 ? 8 : (unsigned long)slot_count(menu)));
     else
         format(line, "%lu / %lu", (unsigned long)(count ? menu->tool_selected + 1 : 0),
@@ -6931,28 +6968,34 @@ static void draw_categories(Menu *menu)
         Color ink = tool_row(menu, y, selected);
         scroll_label(menu, 24, y, 222, menu_category_name(i), strlen(menu_category_name(i)),
                      UI_FONT_SMALL, ink, selected ? ACCENT : PANEL, selected);
-        label_on(menu, 256, y, menu_category_hidden(i) ? "HIDE" : "SHOW", ink, UI_FONT_SMALL,
+        label_on(menu, 256, y, menu_category_hidden(i) ? T("HIDE") : T("SHOW"), ink, UI_FONT_SMALL,
                  selected ? ACCENT : PANEL);
     }
-    label(menu, 24, 194, "A toggles and saves immediately.", MUTED, UI_FONT_SMALL);
+    label(menu, 24, 194, T("A toggles and saves immediately."), MUTED, UI_FONT_SMALL);
 }
 
 /* Settings: two pages of rows, each with its value at the right. */
 static void draw_settings(Menu *menu)
 {
-    static const char *names[SETTING_ROWS] = {"Screen margin",
-                                              "Large game titles",
-                                              "Folder workaround",
-                                              "Show covers",
-                                              "Video previews",
-                                              "Remember position",
-                                              "Recent games",
-                                              "Preview sound",
-                                              "Categories...",
-                                              "Restore display defaults",
-                                              "Discard unsaved changes",
-                                              "Save changes to USB"};
-    char line[80];
+    /* Each language is named in itself ("Ukrainian" in UTF-8), so it can be found from any
+     * other. */
+    static const char *const languages[MENU_LANGUAGE_LAST + 1] = {
+        "English",
+        "\320\243\320\272\321\200\320\260\321\227\320\275\321\201\321\214\320\272\320\260"};
+    static const char *names[SETTING_ROWS] = {N_("Screen margin"),
+                                              N_("Large game titles"),
+                                              N_("Language"),
+                                              N_("Folder workaround"),
+                                              N_("Show covers"),
+                                              N_("Video previews"),
+                                              N_("Remember position"),
+                                              N_("Recent games"),
+                                              N_("Preview sound"),
+                                              N_("Categories..."),
+                                              N_("Restore display defaults"),
+                                              N_("Discard unsaved changes"),
+                                              N_("Save changes to USB")};
+    char line[160];
     size_t start = menu->tool_selected / 9 * 9, i;
     for (i = start; i < SETTING_ROWS && i < start + 9; ++i) {
         const char *value = NULL;
@@ -6966,6 +7009,9 @@ static void draw_settings(Menu *menu)
             break;
         case SETTING_LARGE_TITLES:
             flag = menu->config.large_titles;
+            break;
+        case SETTING_LANGUAGE:
+            value = languages[menu->config.language];
             break;
         case SETTING_FOLDER_WORKAROUND:
             value = workaround_name(menu->settings_folder_workaround);
@@ -6987,9 +7033,9 @@ static void draw_settings(Menu *menu)
             break;
         }
         if (flag >= 0)
-            value = flag ? "ON" : "OFF";
+            value = flag ? T("ON") : T("OFF");
         ink = tool_row(menu, y, selected);
-        label(menu, 24, y, names[i], selected ? INK : TEXT, UI_FONT_SMALL);
+        label(menu, 24, y, T(names[i]), selected ? INK : TEXT, UI_FONT_SMALL);
         /* Values: ON lit green, OFF dim, anything else TV orange.
          * Right-aligned in screen pixels, whatever the margin. */
         if (value)
@@ -7000,17 +7046,17 @@ static void draw_settings(Menu *menu)
                   UI_FONT_SMALL);
     }
     menu->text_background_set = 0;
-    label(menu, 24, 194, "Sound, display, hiding apply now. C saves.", MUTED, UI_FONT_SMALL);
+    label(menu, 24, 194, T("Sound, display, hiding apply now. C saves."), MUTED, UI_FONT_SMALL);
     label(menu, 280, 64, start ? "2/2" : "1/2", OSD_GREEN, UI_FONT_SMALL);
 }
 
 /* Search results: six names a page, and the selected one's folder below. */
 static void draw_search_results(Menu *menu)
 {
-    char line[80];
+    char line[160];
     size_t count = menu->search_count, start = menu->tool_selected / 6 * 6, i;
-    format(line, "%lu matches for: %.24s", (unsigned long)count,
-           *menu->find_query ? menu->find_query : "All games");
+    format(line, T("%lu matches for: %.24s"), (unsigned long)count,
+           *menu->find_query ? menu->find_query : T("All games"));
     label(menu, 22, 82, line, MUTED, UI_FONT_SMALL);
     for (i = start; i < count && i < start + 6; ++i) {
         const char *path = menu->catalog.paths[menu->search_matches[i]];
@@ -7022,7 +7068,7 @@ static void draw_search_results(Menu *menu)
     }
     menu->text_background_set = 0;
     if (!count)
-        label(menu, 22, 112, "No games matched. P to edit.", TEXT, UI_FONT_SMALL);
+        label(menu, 22, 112, T("No games matched. P to edit."), TEXT, UI_FONT_SMALL);
     else {
         /* The folder, cut from the left so its end (nearest the game)
          * shows. */
@@ -7044,26 +7090,26 @@ static void draw_search_results(Menu *menu)
 /* Find backup slots: the ways to look. */
 static void draw_slot_find(Menu *menu)
 {
-    static const char *options[4] = {"Show occupied slots", "Search games / slot names",
-                                     "Go to slot number", "Show all slot numbers"};
+    static const char *options[4] = {N_("Show occupied slots"), N_("Search games / slot names"),
+                                     N_("Go to slot number"), N_("Show all slot numbers")};
     size_t i;
     for (i = 0; i < 4; ++i) {
         int y = 90 + (int)i * 19, selected = (int)i == menu->slot_find_option;
         tool_row(menu, y, selected);
-        label_on(menu, 22, y, options[i], selected ? INK : TEXT, UI_FONT_SMALL,
+        label_on(menu, 22, y, T(options[i]), selected ? INK : TEXT, UI_FONT_SMALL,
                  selected ? ACCENT : PANEL);
     }
-    tool_line(menu, 8, "Older copies: refresh in desktop app.", MUTED);
+    tool_line(menu, 8, T("Older copies: refresh in desktop app."), MUTED);
 }
 
 /* Go to slot: the number typed so far, and a row of digit keys. */
 static void draw_slot_jump(Menu *menu)
 {
-    char line[80];
+    char line[160];
     size_t i;
-    format(line, "Go to slot: %s_", menu->slot_jump);
+    format(line, T("Go to slot: %s_"), menu->slot_jump);
     tool_line(menu, 0, line, TEXT);
-    tool_line(menu, 1, "1-999999999 / allocated when used", MUTED);
+    tool_line(menu, 1, T("1-999999999 / allocated when used"), MUTED);
     for (i = 0; i < 10; ++i) {
         char key[2];
         key[0] = (char)('0' + i);
@@ -7073,25 +7119,25 @@ static void draw_slot_jump(Menu *menu)
         label_on(menu, 27 + i * 27, 113, key, i == (size_t)menu->find_key ? INK : TEXT,
                  UI_FONT_SMALL, i == (size_t)menu->find_key ? ACCENT : PANEL);
     }
-    tool_line(menu, 7, "P:Go X:Erase C:Clear B:Cancel", MUTED);
+    tool_line(menu, 7, T("P:Go X:Erase C:Clear B:Cancel"), MUTED);
 }
 
 /* The screens with the on-screen keyboard: Find, a slot search and naming
  * a slot. */
 static void draw_keyboard(Menu *menu)
 {
-    char line[80];
+    char line[160];
     size_t i;
     if (menu->tools == TOOL_SLOT_NAME)
-        format(line, "Name: %s_", menu->slot_label_edit);
+        format(line, T("Name: %s_"), menu->slot_label_edit);
     else
-        format(line, "Find: %s_",
+        format(line, T("Find: %s_"),
                menu->tools == TOOL_SLOT_QUERY ? menu->slot_query : menu->find_query);
     tool_line(menu, 0, line, TEXT);
     tool_line(menu, 1,
-              menu->tools == TOOL_SLOT_NAME    ? "Blank name restores slot filename."
-              : menu->tools == TOOL_SLOT_QUERY ? "Game, save filename or slot label."
-                                               : "Drive-wide search / PC index.",
+              menu->tools == TOOL_SLOT_NAME    ? T("Blank name restores slot filename.")
+              : menu->tools == TOOL_SLOT_QUERY ? T("Game, save filename or slot label.")
+                                               : T("Drive-wide search / PC index."),
               MUTED);
     for (i = 0; i < FIND_KEYS; ++i) {
         int x = 27 + (int)(i % FIND_KEY_COLUMNS) * 27, y = 113 + (int)(i / FIND_KEY_COLUMNS) * 17;
@@ -7107,33 +7153,35 @@ static void draw_keyboard(Menu *menu)
             text(menu, x, y, key, TEXT);
     }
     text(menu, 24, 189,
-         menu->tools == TOOL_SLOT_NAME ? "P:Save X:Erase C:Clear" : "P:Search X:Erase C:Clear",
+         menu->tools == TOOL_SLOT_NAME ? T("P:Save X:Erase C:Clear")
+                                       : T("P:Search X:Erase C:Clear"),
          MUTED);
 }
 
 /* Help & controls: two pages. */
 static void draw_help(Menu *menu)
 {
-    static const char *help[] = {"A: Open folder / launch game",     "B: Parent folder / cancel",
-                                 "Up/Down: Select (hold to repeat)", "Left/Right or L/R: Page",
-                                 "C: Add selected disc to queue",    "Tap P:Queue / Hold P:Help",
-                                 "X: Cover/video or refresh",        "L+R together: Open tools",
-                                 "Hold X at boot: Skip USB extras",  "C+Up or list ends: Alphabet"};
+    static const char *help[] = {
+        N_("A: Open folder / launch game"),     N_("B: Parent folder / cancel"),
+        N_("Up/Down: Select (hold to repeat)"), N_("Left/Right or L/R: Page"),
+        N_("C: Add selected disc to queue"),    N_("Tap P:Queue / Hold P:Help"),
+        N_("X: Cover/video or refresh"),        N_("L+R together: Open tools"),
+        N_("Hold X at boot: Skip USB extras"),  N_("C+Up or list ends: Alphabet")};
     static const char *more[] = {
-        "Queue: X removes one disc",      "Queue: C toggles move mode",
-        "Move mode: Up/Down reorders",    "Hold C, press X: Clear queue",
-        "Hold C + Left/Right: Letter",    "Hold C + A: Folder / one disc",
-        "Favorites: A opens game folder", "Favorites: C adds, X removes",
-        "Config: C saves, X discards",    "ABC: Left/Right A:Jump B:Cancel"};
+        N_("Queue: X removes one disc"),      N_("Queue: C toggles move mode"),
+        N_("Move mode: Up/Down reorders"),    N_("Hold C, press X: Clear queue"),
+        N_("Hold C + Left/Right: Letter"),    N_("Hold C + A: Folder / one disc"),
+        N_("Favorites: A opens game folder"), N_("Favorites: C adds, X removes"),
+        N_("Config: C saves, X discards"),    N_("ABC: Left/Right A:Jump B:Cancel")};
     size_t i;
     for (i = 0; i < 10; ++i)
-        tool_line(menu, (int)i, menu->tool_selected ? more[i] : help[i], i < 8 ? TEXT : MUTED);
+        tool_line(menu, (int)i, T(menu->tool_selected ? more[i] : help[i]), i < 8 ? TEXT : MUTED);
 }
 
 /* Diagnostics page 1: the ODE's identity. */
 static void draw_diagnostics_ode(Menu *menu)
 {
-    char line[80];
+    char line[160];
     const unsigned char *reply = menu->ode.identity_reply;
     format(line, "Menu %s / XBUS unit 0", MENU_VERSION);
     tool_line(menu, 0, line, TEXT);
@@ -7158,7 +7206,7 @@ static void draw_diagnostics_ode(Menu *menu)
 /* Diagnostics page 2: settings in use and this session's results. */
 static void draw_diagnostics_session(Menu *menu)
 {
-    char line[80];
+    char line[160];
     int row = 4;
     format(line, "Folder workaround: %s (%s)", workaround_name(menu->config.folder_workaround),
            folder_workaround(menu) ? "in use" : "not used");
@@ -7190,7 +7238,7 @@ static void draw_diagnostics_session(Menu *menu)
 /* Diagnostics page 3: the last ODE command and any fault. */
 static void draw_diagnostics_transport(Menu *menu)
 {
-    char line[80];
+    char line[160];
     format(line, "Commands sent: %lu", menu->bus.commands);
     tool_line(menu, 0, line, TEXT);
     format(line, "Last command: %02x (%lu bytes)", menu->bus.last_command,
@@ -7220,7 +7268,7 @@ static void draw_diagnostics_transport(Menu *menu)
 /* Diagnostics page 4: how the last preview load went. */
 static void draw_diagnostics_preview(Menu *menu)
 {
-    char line[80];
+    char line[160];
     tool_line(menu, 0, "Last preview load", TEXT);
     format(line, "Result: %d  Total: %lums", menu->preview_result, menu->preview_load_ms);
     tool_line(menu, 1, line, TEXT);
@@ -7251,7 +7299,7 @@ static void draw_diagnostics_preview(Menu *menu)
 /* Diagnostics page 5: the last file asked for and the media indexes. */
 static void draw_diagnostics_files(Menu *menu)
 {
-    char line[80];
+    char line[160];
     size_t i;
     tool_line(menu, 0, "Last requested USB file:", TEXT);
     for (i = 0; i < 4; ++i) {
@@ -7299,7 +7347,7 @@ static void draw_diagnostics(Menu *menu)
  */
 static void draw_compare(Menu *menu)
 {
-    char line[80];
+    char line[160];
     SaveDifference diff;
     size_t total = save_archive_diff_count(&menu->compare_archive, &menu->backup), i;
     {
@@ -7313,7 +7361,7 @@ static void draw_compare(Menu *menu)
         tool_line(menu, 0, line, MUTED);
     }
     if (menu->tools == TOOL_COMPARE) {
-        static const char *states[] = {"SAME", "CHANGED", "ADDED", "REMOVED"};
+        static const char *states[] = {N_("SAME"), N_("CHANGED"), N_("ADDED"), N_("REMOVED")};
         size_t start = menu->tool_selected / 8 * 8;
         for (i = start; i < total && i < start + 8; ++i)
             if (!save_archive_diff(&menu->compare_archive, &menu->backup, i, &diff)) {
@@ -7321,15 +7369,15 @@ static void draw_compare(Menu *menu)
                                          ? &menu->backup.entries[diff.after]
                                          : &menu->compare_archive.entries[diff.before];
                 Color ink = tool_row(menu, 100 + (int)(i - start) * 11, i == menu->tool_selected);
-                format(line, "%-7s %.25s", states[diff.state], e->name);
+                format(line, "%-7s %.25s", T(states[diff.state]), e->name);
                 text(menu, 22, 100 + (i - start) * 11, line, ink);
             }
         if (!total)
-            tool_line(menu, 3, "Both slots are empty.", MUTED);
+            tool_line(menu, 3, T("Both slots are empty."), MUTED);
         else if (!save_archive_diff(&menu->compare_archive, &menu->backup, menu->tool_selected,
                                     &diff)) {
-            format(line, "%lu byte(s) differ%s", (unsigned long)diff.changed_bytes,
-                   diff.metadata_changed ? " / metadata" : "");
+            format(line, T("%lu byte(s) differ%s"), (unsigned long)diff.changed_bytes,
+                   diff.metadata_changed ? T(" / metadata") : "");
             tool_line(menu, 9, line, MUTED);
         }
     } else if (!save_archive_diff(&menu->compare_archive, &menu->backup, menu->tool_selected,
@@ -7342,7 +7390,7 @@ static void draw_compare(Menu *menu)
             diff.after < menu->backup.count ? &menu->backup.entries[diff.after] : NULL;
         size_t at, n = 0, row = 0;
         tool_line(menu, 1, a ? a->name : b->name, TEXT);
-        tool_line(menu, 2, "Offset     Before  After", MUTED);
+        tool_line(menu, 2, T("Offset     Before  After"), MUTED);
         for (at = 0; at < diff.length && row < 7; ++at)
             if (!a || !b || at >= a->size || at >= b->size || a->data[at] != b->data[at]) {
                 char old[3], next[3];
@@ -7361,8 +7409,8 @@ static void draw_compare(Menu *menu)
             }
         if (!diff.changed_bytes)
             tool_line(menu, 4,
-                      diff.metadata_changed ? "Only filename/type differs."
-                                            : "Save bytes are identical.",
+                      diff.metadata_changed ? T("Only filename/type differs.")
+                                            : T("Save bytes are identical."),
                       MUTED);
     }
 }
@@ -7371,48 +7419,48 @@ static void draw_compare(Menu *menu)
  * copying it, or saving it after hex edits) merged into the slot. */
 static void draw_confirm_backup(Menu *menu)
 {
-    char line[80];
+    char line[160];
     slot_path(line, menu->backup_slot);
     tool_line(menu, 0, line, TEXT);
     if (menu->backup_merge) {
         const SaveEntry *entry = backup_entry(menu);
         tool_line(menu, 2,
-                  menu->hex_archive.bytes     ? "Save edited file:"
-                  : menu->copy_original.bytes ? "Copy this save:"
-                                              : "Back up this save:",
+                  menu->hex_archive.bytes     ? T("Save edited file:")
+                  : menu->copy_original.bytes ? T("Copy this save:")
+                                              : T("Back up this save:"),
                   TEXT);
         tool_line(menu, 3, entry->name, TEXT);
-        tool_line(menu, 5, "Other slot entries stay unchanged.", ACCENT);
-        format(line, "Slot will contain %lu save(s).", (unsigned long)menu->pending.count);
+        tool_line(menu, 5, T("Other slot entries stay unchanged."), ACCENT);
+        format(line, T("Slot will contain %lu save(s)."), (unsigned long)menu->pending.count);
         tool_line(menu, 7, line, MUTED);
     } else {
-        format(line, "Back up %lu save file(s)?", (unsigned long)menu->pending.count);
+        format(line, T("Back up %lu save file(s)?"), (unsigned long)menu->pending.count);
         tool_line(menu, 2, line, TEXT);
         if (menu->backup_slot_valid)
-            format(line, "Replaces %lu existing save(s).", (unsigned long)menu->backup.count);
+            format(line, T("Replaces %lu existing save(s)."), (unsigned long)menu->backup.count);
         else
-            strcpy(line, "Replaces this USB backup slot.");
+            strcpy(line, T("Replaces this USB backup slot."));
         tool_line(menu, 4, line, AMBER);
-        tool_line(menu, 6, "Internal saves stay unchanged.", ACCENT);
+        tool_line(menu, 6, T("Internal saves stay unchanged."), ACCENT);
     }
 }
 
 /* Confirming a restore of one save to NVRAM. */
 static void draw_confirm_restore(Menu *menu)
 {
-    char line[80];
+    char line[160];
     const SaveEntry *e = &menu->backup.entries[menu->save_selected];
     tool_line(menu, 0, e->name, TEXT);
-    format(line, "%lu bytes / type %08lx", (unsigned long)e->size, e->type);
+    format(line, T("%lu bytes / type %08lx"), (unsigned long)e->size, e->type);
     tool_line(menu, 1, line, MUTED);
-    tool_line(menu, 3, "Restore this save to NVRAM?", AMBER);
-    tool_line(menu, 4, "Replaces the matching save.", AMBER);
-    tool_line(menu, 6, "First: verified recovery backup.", TEXT);
+    tool_line(menu, 3, T("Restore this save to NVRAM?"), AMBER);
+    tool_line(menu, 4, T("Replaces the matching save."), AMBER);
+    tool_line(menu, 6, T("First: verified recovery backup."), TEXT);
     tool_line(menu, 7,
-              menu->backup_slot == SAVE_RECOVERY_SLOT ? "Replaces USB recovery2.3ds."
-                                                      : "Replaces USB recovery.3ds.",
+              menu->backup_slot == SAVE_RECOVERY_SLOT ? T("Replaces USB recovery2.3ds.")
+                                                      : T("Replaces USB recovery.3ds."),
               MUTED);
-    tool_line(menu, 9, "Keep power on until finished.", AMBER);
+    tool_line(menu, 9, T("Keep power on until finished."), AMBER);
 }
 
 /* The current screen's controls, shown under the panel unless there is a
@@ -7421,58 +7469,59 @@ static const char *tools_controls(Menu *menu)
 {
     switch (menu->tools) {
     case TOOL_GAME_DETAILS:
-        return "Left/Right:Page B:Back";
+        return T("Left/Right:Page B:Back");
     case TOOL_FAVORITES:
-        return menu->favorites_move ? "Up/Down:Move A/R:Save B:Cancel"
-                                    : "A:Open C:Add X:Remove B:Back";
+        return menu->favorites_move ? T("Up/Down:Move A/R:Save B:Cancel")
+                                    : T("A:Open C:Add X:Remove B:Back");
     case TOOL_RESULTS:
-        return "A:Open P:Edit X:Reload B:Back";
+        return T("A:Open P:Edit X:Reload B:Back");
     case TOOL_SLOT_JUMP:
-        return "Left/Right:Digit A:Add P:Go";
+        return T("Left/Right:Digit A:Add P:Go");
     case TOOL_SLOT_NAME:
     case TOOL_SLOT_QUERY:
     case TOOL_FIND:
-        return "Arrows:Choose A:Key B:Cancel";
+        return T("Arrows:Choose A:Key B:Cancel");
     case TOOL_COMPARE:
-        return "A:Byte differences B:Back";
+        return T("A:Byte differences B:Back");
     case TOOL_COMPARE_BYTES:
-        return "Left/Right:Page B:Back";
+        return T("Left/Right:Page B:Back");
     case TOOL_SLOTS:
         if (menu->backup_mode)
             break;
-        return menu->compare_choosing ? "A:Compare with this slot B:Cancel"
-                                      : "A:Open C:Name X:Compare";
+        return menu->compare_choosing ? T("A:Compare with this slot B:Cancel")
+                                      : T("A:Open C:Name X:Compare");
     case TOOL_CATEGORIES:
-        return "A:Show/Hide B:Settings";
+        return T("A:Show/Hide B:Settings");
     case TOOL_CONFIG:
-        return "Left/Right:Change C:Save B:Back";
+        return T("Left/Right:Change C:Save B:Back");
     case TOOL_BACKUP_DETAILS:
-        return "A:Continue C:Old/New B:Back";
+        return T("A:Continue C:Old/New B:Back");
     case TOOL_SAVES:
-        return "A:Back up one C:All X:Refresh";
+        return T("A:Back up one C:All X:Refresh");
     case TOOL_ARCHIVE:
-        return "A:Restore C:Hex X:Cheats B:Back";
+        return T("A:Restore C:Hex X:Cheats B:Back");
     case TOOL_CHEATS: {
         const SaveCheatProfile *cheats =
             save_cheats_find(&menu->hex_archive.entries[menu->save_selected]);
-        return cheats && menu->cheat_selected < cheats->preset_count ? "A:Apply preset"
-                                                                     : "Left/Right:Change value";
+        return cheats && menu->cheat_selected < cheats->preset_count ? T("A:Apply preset")
+                                                                     : T("Left/Right:Change value");
     }
     case TOOL_HEX:
-        return menu->hex_editing ? "Arrows:Value A:Apply B:Cancel" : "Arrows:Move A:Edit C:Save as";
+        return menu->hex_editing ? T("Arrows:Value A:Apply B:Cancel")
+                                 : T("Arrows:Move A:Edit C:Save as");
     case TOOL_HEX_DISCARD:
-        return "A:Discard B:Keep editing";
+        return T("A:Discard B:Keep editing");
     case TOOL_CONFIRM_BACKUP:
     case TOOL_CONFIRM_RESTORE:
-        return "A:Confirm B:Cancel";
+        return T("A:Confirm B:Cancel");
     case TOOL_DIAG:
-        return "C:Export X:Test return B:Back";
+        return T("C:Export X:Test return B:Back");
     case TOOL_HELP:
-        return "B:Back";
+        return T("B:Back");
     case TOOL_RECENT:
-        return "A:Open folder P:Reload B:Back";
+        return T("A:Open folder P:Reload B:Back");
     }
-    return "A:Select B:Back";
+    return T("A:Select B:Back");
 }
 
 /* The second row of controls: the screen's extra buttons. */
@@ -7480,20 +7529,20 @@ static const char *tools_more_controls(Menu *menu)
 {
     switch (menu->tools) {
     case TOOL_SLOTS:
-        return "L/R:Slot page P:Find slots";
+        return T("L/R:Slot page P:Find slots");
     case TOOL_ARCHIVE:
-        return "P:Copy to slot L+R:Library";
+        return T("P:Copy to slot L+R:Library");
     case TOOL_CHEATS:
-        return "C:Save as X:Hex B:Back";
+        return T("C:Save as X:Hex B:Back");
     case TOOL_HEX:
-        return "L/R:Page X:Cheats B:Back";
+        return T("L/R:Page X:Cheats B:Back");
     case TOOL_FAVORITES:
-        return "R:Move order P:Reload";
+        return T("R:Move order P:Reload");
     case TOOL_DIAG:
     case TOOL_HELP:
-        return "Left/Right:More pages";
+        return T("Left/Right:More pages");
     }
-    return save_manager_tab(menu) ? "Left/Right:View B:Back" : "Hold P:Help L+R:Library";
+    return save_manager_tab(menu) ? T("Left/Right:View B:Back") : T("Hold P:Help L+R:Library");
 }
 
 /*
@@ -7528,13 +7577,13 @@ static void draw_tools(Menu *menu)
     menu->text_style = UI_FONT_SMALL;
     menu->screen.sc_curScreen ^= 1;
     rectangle(menu, 0, 0, 320, 240, BG);
-    brand(menu, menu->tools == TOOL_GAME_DETAILS ? "Game info" : "Tools");
+    brand(menu, menu->tools == TOOL_GAME_DETAILS ? T("Game info") : T("Tools"));
     /* The TV's own setup menu: an on-screen-display tag, as CH is in the library. */
     label(menu,
-          308 - (ui_font_width("MENU", UI_FONT_HEADING) * 320 + 319 -
+          308 - (ui_font_width(T("MENU"), UI_FONT_HEADING) * 320 + 319 -
                  2 * menu->config.screen_margin) /
                     (320 - 2 * menu->config.screen_margin),
-          9, "MENU", OSD_GREEN, UI_FONT_HEADING);
+          9, T("MENU"), OSD_GREEN, UI_FONT_HEADING);
     rectangle(menu, 12, 58, 296, 148, PANEL);
     label(menu, 22, 62, tools_title(menu), TEXT, UI_FONT_NORMAL);
     rectangle(menu, 22, 77, 39, 2, TV_ORANGE);
@@ -7552,8 +7601,8 @@ static void draw_tools(Menu *menu)
         draw_hex(menu);
         break;
     case TOOL_HEX_DISCARD:
-        tool_line(menu, 2, "Discard unsaved hex edits?", AMBER);
-        tool_line(menu, 4, "The USB backup is unchanged.", TEXT);
+        tool_line(menu, 2, T("Discard unsaved hex edits?"), AMBER);
+        tool_line(menu, 4, T("The USB backup is unchanged."), TEXT);
         break;
     case TOOL_GAME_DETAILS:
         draw_game_details(menu);
@@ -7606,7 +7655,7 @@ static void draw_tools(Menu *menu)
 
     /* The controls, or a message in their place. */
     if (menu->tool_message)
-        label(menu, 16, 211, menu->tool_message, AMBER, UI_FONT_SMALL);
+        label(menu, 16, 211, T(menu->tool_message), AMBER, UI_FONT_SMALL);
     else
         control_badges(menu, 16, 210, tools_controls(menu), 1);
     control_badges(menu, 16, 225, tools_more_controls(menu), 0);
@@ -7628,7 +7677,7 @@ static void save_progress(void *context, size_t bytes)
 {
     Menu *menu = (Menu *)context;
     menu->read_count += bytes;
-    format(menu->status, "USB transfer / verify: %lu KiB",
+    format(menu->status, T("USB transfer / verify: %lu KiB"),
            (unsigned long)((menu->read_count + 1023) / 1024));
     menu->tool_message = menu->status;
     draw(menu);
@@ -7765,14 +7814,14 @@ static int save_root_operation(Menu *menu, int action, const char *path, SaveArc
     int result;
     if (menu->demo || !menu->ready || menu->bus.timed_out || menu->ode.navigation_failed ||
         strcmp(menu->ode.identity, "LOCODE") || menu->config_result == 2) {
-        menu->tool_message = "USB save access unavailable.";
+        menu->tool_message = N_("USB save access unavailable.");
         return -1;
     }
     /* A virtual device list has no current filesystem for relative file I/O. */
     if (!menu->depth)
         for (i = 0; i < menu->listing.count; ++i)
             if (!(menu->listing.entries[i]->toc_id & 0xffffffUL)) {
-                menu->tool_message = "Enter a USB volume first.";
+                menu->tool_message = N_("Enter a USB volume first.");
                 return -1;
             }
     for (i = 0; i < menu->depth; ++i) {
@@ -7785,19 +7834,19 @@ static int save_root_operation(Menu *menu, int action, const char *path, SaveArc
     op.archive = archive;
     menu->tool_message = action != SAVE_LOAD && action != SAVE_LOAD_TARGET &&
                                  action != SAVE_READ_LABELS && action != SAVE_SEARCH_CATALOG
-                             ? "Writing / verifying USB..."
-                             : "Reading / validating backup...";
+                             ? N_("Writing / verifying USB...")
+                             : T("Reading / validating backup...");
     draw(menu);
     result = art_at_root(&menu->ode, route, menu->depth, &menu->listing, folder_workaround(menu),
                          save_root_callback, &op);
     if (result == -2 || menu->bus.timed_out || menu->ode.navigation_failed) {
         menu->ready = menu->view_valid = 0;
-        menu->tool_message = "USB I/O failed. Restart console.";
+        menu->tool_message = N_("USB I/O failed. Restart console.");
         return -1;
     }
     menu->tool_message = result < 0 ? action == SAVE_SEARCH_CATALOG
-                                          ? "Refresh slot catalog in desktop app."
-                                          : "USB failed. Check .ohmy3do/saves."
+                                          ? N_("Refresh slot catalog in desktop app.")
+                                          : N_("USB failed. Check .ohmy3do/saves.")
                                     : NULL;
     return result;
 }
@@ -7856,14 +7905,14 @@ static void load_save_names(Menu *menu)
     op.disc = (char *)malloc(SAVE_NAMES_BYTES);
     op.learned = (char *)malloc(SAVE_NAMES_BYTES);
     if (op.disc && op.learned) {
-        menu->tool_message = "Reading save names...";
+        menu->tool_message = N_("Reading save names...");
         draw(menu);
         current_route(menu, route);
         result = art_at_root(&menu->ode, route, menu->depth, &menu->listing,
                              folder_workaround(menu), save_names_at_root, &op);
         if (result == -2 || menu->bus.timed_out || menu->ode.navigation_failed) {
             menu->ready = menu->view_valid = 0;
-            menu->message = "USB I/O failed. Restart console.";
+            menu->message = N_("USB I/O failed. Restart console.");
         } else if (!save_names_parse(&menu->save_names, op.disc, op.disc_length, op.learned,
                                      op.learned_length))
             menu->save_names_loaded = 1;
@@ -7921,7 +7970,7 @@ done:
 static void scan_nvram(Menu *menu)
 {
     load_save_names(menu);
-    menu->tool_message = "Reading internal saves...";
+    menu->tool_message = N_("Reading internal saves...");
     draw(menu);
     save_archive_free(&menu->nvram);
     if (nvram_snapshot(&menu->nvram, &menu->nvram_info) < 0)
@@ -7971,7 +8020,7 @@ static void restore_selected(Menu *menu)
      * first write to NVRAM. A directory-restore failure also cancels restore. */
     if (save_root_operation(menu, SAVE_STORE, recovery, &current) < 0)
         goto done;
-    menu->tool_message = "Restoring internal save...";
+    menu->tool_message = N_("Restoring internal save...");
     draw(menu);
     if (nvram_restore(entry, &menu->nvram_info) < 0) {
         menu->tool_message = menu->nvram_info.error;
@@ -7982,7 +8031,7 @@ static void restore_selected(Menu *menu)
         result = 0;
     menu->restore_result = result ? -1 : 1;
     menu->tool_message =
-        result ? "Verify failed. Keep recovery backup." : "Save restored and verified.";
+        result ? T("Verify failed. Keep recovery backup.") : T("Save restored and verified.");
 done:
     save_archive_free(&current);
     save_archive_free(&verified);
@@ -7999,7 +8048,7 @@ static void hex_screen_input(Menu *menu, u32 pressed)
             menu->cheat_selected = 0;
             menu->tool_message = NULL;
         } else
-            menu->tool_message = "No verified cheats match this save.";
+            menu->tool_message = N_("No verified cheats match this save.");
         return;
     }
     hex_input(menu, pressed);
@@ -8082,7 +8131,7 @@ static void slot_jump_input(Menu *menu, u32 pressed)
         for (i = 0; menu->slot_jump[i]; ++i)
             number = number * 10 + (unsigned long)(menu->slot_jump[i] - '0');
         if (!number || number > SAVE_SLOT_LIMIT)
-            menu->tool_message = "Enter a slot number from 1-999999999.";
+            menu->tool_message = N_("Enter a slot number from 1-999999999.");
         else {
             menu->slot_filtered = 0;
             slot_select(menu, (unsigned int)(number - 1));
@@ -8108,14 +8157,14 @@ static void slot_name_input(Menu *menu, u32 pressed)
     strcpy(menu->slot_labels.labels[menu->slot_name_slot % 8], menu->slot_label_edit);
     if (!save_root_operation(menu, SAVE_WRITE_LABELS, NULL, NULL)) {
         menu->tools = TOOL_SLOTS;
-        menu->tool_message = "Slot name saved and verified.";
+        menu->tool_message = N_("Slot name saved and verified.");
         if (menu->slot_filtered) {
             menu->slot_results.offset = 0;
             slot_search(menu);
         }
     } else {
         menu->slot_labels = menu->slot_labels_before;
-        menu->tool_message = "Name failed. Reload before retrying.";
+        menu->tool_message = N_("Name failed. Reload before retrying.");
         menu->tools = TOOL_SLOTS;
     }
 }
@@ -8166,7 +8215,7 @@ static int archive_input(Menu *menu, u32 pressed)
         menu->save_selected = menu->tool_selected;
         save_archive_free(&menu->pending);
         if (save_archive_build(&menu->pending, &menu->backup.entries[menu->save_selected], 1) < 0) {
-            menu->tool_message = "Cannot prepare copy.";
+            menu->tool_message = N_("Cannot prepare copy.");
             return 1;
         }
         /* Keep the source backup aside while choosing where to copy to. */
@@ -8183,7 +8232,7 @@ static int archive_input(Menu *menu, u32 pressed)
     if (pressed & ControlX) {
         menu->save_selected = menu->tool_selected;
         if (!save_cheats_find(&menu->backup.entries[menu->save_selected])) {
-            menu->tool_message = "No verified cheats match this save.";
+            menu->tool_message = N_("No verified cheats match this save.");
             return 1;
         }
         if (!open_hex(menu)) {
@@ -8264,7 +8313,7 @@ static int slots_input(Menu *menu, u32 pressed)
             return 1;
         menu->slot_name_slot = slot_at(menu, menu->tool_selected);
         if (menu->slot_name_slot >= SAVE_SLOT_LIMIT) {
-            menu->tool_message = "Recovery backups keep their names.";
+            menu->tool_message = N_("Recovery backups keep their names.");
             return 1;
         }
         menu->slot_page = menu->slot_name_slot / 8;
@@ -8284,7 +8333,7 @@ static int slots_input(Menu *menu, u32 pressed)
         if (save_root_operation(menu, SAVE_LOAD_TARGET, path, &menu->compare_archive) >= 0) {
             menu->compare_slot = slot_at(menu, menu->tool_selected);
             menu->compare_choosing = 1;
-            menu->tool_message = "Choose the second slot, then A.";
+            menu->tool_message = N_("Choose the second slot, then A.");
         }
         return 1;
     }
@@ -8435,19 +8484,19 @@ static void toggle_category(Menu *menu)
 {
     unsigned int root = menu->depth && !(menu->path_ids[0] & 0xffffffUL) ? 1 : 0;
     if (!menu->categories_valid) {
-        menu->tool_message = "Invalid categories.json. Repair on PC.";
+        menu->tool_message = N_("Invalid categories.json. Repair on PC.");
         return;
     }
     if (menu_category_toggle(menu->tool_selected) < 0) {
-        menu->tool_message = "Invalid category data.";
+        menu->tool_message = N_("Invalid category data.");
         return;
     }
     if (text_at_root(menu, "categories.json", menu_categories_text(), NULL, 0, NULL) < 0) {
         menu_category_toggle(menu->tool_selected);
-        menu->tool_message = "Visibility save failed. Check USB.";
+        menu->tool_message = N_("Visibility save failed. Check USB.");
         return;
     }
-    menu->tool_message = "Visibility saved and verified.";
+    menu->tool_message = N_("Visibility saved and verified.");
     if (menu->depth > root && menu_categories_hidden_name(menu->path[root])) {
         while (menu->ready && menu->depth > root) {
             unsigned int before = menu->depth;
@@ -8481,7 +8530,7 @@ static void begin_backup(Menu *menu, u32 pressed)
             if (!strcmp(selected_name, menu->nvram.entries[selected].name))
                 break;
         if (selected == menu->nvram.count) {
-            menu->tool_message = "Save list changed. Select again.";
+            menu->tool_message = N_("Save list changed. Select again.");
             return;
         }
     }
@@ -8489,7 +8538,7 @@ static void begin_backup(Menu *menu, u32 pressed)
     if (save_archive_build(&menu->pending,
                            all ? menu->nvram.entries : &menu->nvram.entries[selected],
                            all ? menu->nvram.count : 1) < 0) {
-        menu->tool_message = "Cannot prepare backup.";
+        menu->tool_message = N_("Cannot prepare backup.");
         return;
     }
     menu->backup_merge = !all;
@@ -8555,12 +8604,12 @@ static void open_slot(Menu *menu)
             if (menu->ode.navigation_failed || menu->bus.timed_out || !menu->ready)
                 return;
             if (loaded < 0) {
-                menu->tool_message = "Slot unreadable. Choose another.";
+                menu->tool_message = N_("Slot unreadable. Choose another.");
                 return;
             }
             menu->backup_slot_valid = loaded == 0;
             if (save_archive_merge(&menu->pending, &menu->backup, entry) < 0) {
-                menu->tool_message = "Merged slot is full. Choose another.";
+                menu->tool_message = N_("Merged slot is full. Choose another.");
                 return;
             }
         } else
@@ -8583,7 +8632,7 @@ static void open_slot(Menu *menu)
             menu->tool_selected = 0;
         } else if (menu->tool_message &&
                    !strcmp(menu->tool_message, "USB failed. Check .ohmy3do/saves."))
-            menu->tool_message = "No valid backup in this slot.";
+            menu->tool_message = N_("No valid backup in this slot.");
     }
 }
 
@@ -8602,9 +8651,9 @@ static void confirm_backup(Menu *menu)
         !save_root_operation(menu, menu->backup_merge ? SAVE_STORE_CHECKED : SAVE_STORE, path,
                              &menu->pending)) {
         menu->backup_result = 1;
-        menu->tool_message = menu->slot_catalog_stale ? "Saved. Refresh catalog in desktop app."
-                             : menu->backup_merge     ? "Save merged and verified."
-                                                      : "Backup saved and verified.";
+        menu->tool_message = menu->slot_catalog_stale ? N_("Saved. Refresh catalog in desktop app.")
+                             : menu->backup_merge     ? N_("Save merged and verified.")
+                                                      : N_("Backup saved and verified.");
         if (menu->copy_original.bytes) {
             finish_copy(menu);
             return;
@@ -8915,15 +8964,15 @@ static void draw_context_help(Menu *menu)
     menu->screen.sc_curScreen ^= 1;
     menu->browser_frames[0].valid = menu->browser_frames[1].valid = 0;
     rectangle(menu, 0, 0, 320, 240, BG);
-    brand(menu, "Controls");
+    brand(menu, T("Controls"));
     rectangle(menu, 12, 58, 296, 148, PANEL);
     label(menu, 22, 62, menu_help_title(topic), TEXT, UI_FONT_NORMAL);
     rectangle(menu, 22, 77, 39, 2, TV_ORANGE);
     rectangle(menu, 63, 77, 17, 2, ACCENT);
     for (row = 0; row < MENU_HELP_ROWS; ++row)
         tool_line(menu, (int)row, menu_help_line(topic, row), TEXT);
-    control_badges(menu, 16, 211, "B/P:Return to this screen", 0);
-    label(menu, 16, 228, "Tap P: Normal action / Hold P: Help", MUTED, UI_FONT_SMALL);
+    control_badges(menu, 16, 211, T("B/P:Return to this screen"), 0);
+    label(menu, 16, 228, T("Tap P: Normal action / Hold P: Help"), MUTED, UI_FONT_SMALL);
     DisplayScreen(menu->screen.sc_Screens[menu->screen.sc_curScreen], 0);
 }
 
@@ -9171,18 +9220,18 @@ static void queue_review_input(Menu *menu, u32 pressed, u32 buttons)
         else {
             menu->queue_selected = 0;
             menu->queue_move = 0;
-            notify(menu, "Queue cleared. B:Back");
+            notify(menu, N_("Queue cleared. B:Back"));
         }
     } else if (pressed & ControlX) {
         if (!ode_playlist_remove_local(&menu->playlist, menu->queue_selected)) {
             if (menu->queue_selected >= menu->playlist.count)
                 menu->queue_selected = menu->playlist.count ? menu->playlist.count - 1 : 0;
-            notify(menu, "Disc removed. A:Play B:Back");
+            notify(menu, N_("Disc removed. A:Play B:Back"));
         } else
-            menu->message = "Queue uncertain. C+X:Clear";
+            menu->message = N_("Queue uncertain. C+X:Clear");
     } else if (pressed & ControlC) {
         menu->queue_move = !menu->queue_move;
-        menu->message = menu->queue_move ? "Up/Down:Move C/B:Done" : NULL;
+        menu->message = menu->queue_move ? N_("Up/Down:Move C/B:Done") : NULL;
     } else if (pressed & (ControlA | ControlStart)) {
         if (menu->queue_move) {
             menu->queue_move = 0;
@@ -9256,7 +9305,7 @@ static void main_loop_pass(Menu *menu, Pad *pad)
     }
     fade_step(menu);
     if (read_pad(menu, pad) < 0) {
-        menu->message = "Controller read failed";
+        menu->message = N_("Controller read failed");
         next_frame(menu);
         return;
     }
@@ -9294,8 +9343,9 @@ static void main_loop_pass(Menu *menu, Pad *pad)
         if ((pressed & ControlB) && can_recover_library(menu))
             recover_library(menu);
         else
-            menu->message = can_recover_library(menu) ? "Folder I/O failed. B:Return to library."
-                                                      : "Connection lost. Power cycle console.";
+            menu->message = can_recover_library(menu)
+                                ? N_("Folder I/O failed. B:Return to library.")
+                                : N_("Connection lost. Power cycle console.");
         next_frame(menu);
         return;
     }

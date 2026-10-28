@@ -708,6 +708,7 @@ SETTING_LIMITS = dict(
     video_previews=1,
     preview_sound=1,
     hide_adult=1,
+    language=1,
 )
 SETTING_SECTIONS = ("[compatibility]", "[artwork]", "[display]", "[library]", "[audio]")
 SETTINGS_END_MARKER = "; End of Oh My 3DO settings."
@@ -726,8 +727,9 @@ def validate_config(path):
     for line in data.decode("utf-8-sig").split("\n"):
         line = line.strip(" \t\r")
         if line == SETTINGS_END_MARKER:
-            # hide_adult is newer than the end marker and stays optional.
-            if not set(SETTING_LIMITS) - {"hide_adult"} <= values.keys():
+            # hide_adult and language are newer than the end marker and stay
+            # optional (the menu writes language only when it is not English).
+            if not set(SETTING_LIMITS) - {"hide_adult", "language"} <= values.keys():
                 raise ValueError("Incomplete generated settings")
             ended = True
             break

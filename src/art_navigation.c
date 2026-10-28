@@ -2,6 +2,7 @@
  * Round trips to another folder to read a file. See art_navigation.h.
  */
 #include "art_navigation.h"
+#include "menu_text.h"
 #include <string.h>
 
 /* An id's top byte names the USB volume; the low 24 bits the entry on it. */
@@ -90,7 +91,7 @@ done:
 
 failed:
     ode->navigation_failed = 1;
-    ode->error = "USB game folder restore failed";
+    ode->error = N_("USB game folder restore failed");
     result = -2;
     goto done;
 }
@@ -189,6 +190,6 @@ failed:
     ode_listing_free(&listing);
     ode->progress = progress;
     ode->navigation_failed = 1;
-    ode->error = "USB folder restore failed";
+    ode->error = N_("USB folder restore failed");
     return -2;
 }

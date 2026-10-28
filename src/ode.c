@@ -2,6 +2,7 @@
  * The FCare's browsing and launching commands. See ode.h for the protocol.
  */
 #include "ode.h"
+#include "menu_text.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -71,18 +72,18 @@ static int send_command(Ode *ode, unsigned char code, unsigned long id, unsigned
 
     if (ode->transfer(ode->context, bytes, reply, 32, &length) < 0) {
         ode->transport_uncertain = 1;
-        return fail(ode, "ODE communication failed");
+        return fail(ode, N_("ODE communication failed"));
     }
     if (length != expected || reply[0] != code) {
         ode->transport_uncertain = 1;
-        return fail(ode, "Unexpected ODE response");
+        return fail(ode, N_("Unexpected ODE response"));
     }
     /*
      * Starting the queue sets the error bit on purpose: it is how the drive
      * reports "the disc changed", which makes the console boot the new disc.
      */
     if (code != CMD_START_QUEUE && (reply[length - 1] & STATUS_ERROR))
-        return fail(ode, "ODE rejected command");
+        return fail(ode, N_("ODE rejected command"));
     return 0;
 }
 
@@ -144,7 +145,7 @@ int ode_enter_directory(Ode *ode, const OdeListing *listing, const MenuEntry *en
     unsigned long key = entry->toc_id & ENTRY_BITS;
 
     if (!entry->is_directory)
-        return fail(ode, "Select a folder");
+        return fail(ode, N_("Select a folder"));
 
     /* No bug to avoid: the workaround is off, the target is a volume, or the
      * last change is known to have used a different entry number. */
@@ -183,7 +184,7 @@ int ode_enter_directory(Ode *ode, const OdeListing *listing, const MenuEntry *en
             }
         }
     }
-    return fail(ode, "No safe folder workaround here");
+    return fail(ode, N_("No safe folder workaround here"));
 }
 
 /*
@@ -200,7 +201,7 @@ typedef struct ListingReader {
 static int next_byte(ListingReader *reader, unsigned char *value)
 {
     if (reader->position >= ODE_TOC_BYTES)
-        return fail(reader->ode, "Truncated directory record");
+        return fail(reader->ode, N_("Truncated directory record"));
 
     /* At the start of each 16-byte chunk, fetch it. */
     if (reader->position % LISTING_CHUNK == 0) {
@@ -316,16 +317,16 @@ static int read_listing_batch(Ode *ode, OdeListing *listing, unsigned long start
         if (flags == RECORD_END)
             break;
         if (flags != RECORD_FILE && flags != RECORD_FOLDER)
-            return fail(ode, "Unknown directory entry type");
+            return fail(ode, N_("Unknown directory entry type"));
         if (next_word(&reader, &id) < 0 || next_word(&reader, &length) < 0)
             return -1;
         if (length < 1 || length > ODE_MAX_NAME || length > ODE_TOC_BYTES - reader.position)
-            return fail(ode, "Invalid directory name length");
+            return fail(ode, N_("Invalid directory name length"));
 
         /* The entry and its name share one allocation, name just after. */
         entry = (MenuEntry *)malloc(sizeof(*entry) + (size_t)length);
         if (!entry)
-            return fail(ode, "Not enough memory for directory");
+            return fail(ode, N_("Not enough memory for directory"));
         name = (char *)(entry + 1);
         for (i = 0; i < (size_t)length; ++i) {
             unsigned char byte;
@@ -338,7 +339,7 @@ static int read_listing_batch(Ode *ode, OdeListing *listing, unsigned long start
         /* Exactly one zero byte, at the end. */
         if (name[length - 1] != 0 || strlen(name) != (size_t)length - 1) {
             free(entry);
-            return fail(ode, "Invalid directory name");
+            return fail(ode, N_("Invalid directory name"));
         }
 
         /* ".." becomes the listing's parent, not an entry. */
@@ -354,14 +355,14 @@ static int read_listing_batch(Ode *ode, OdeListing *listing, unsigned long start
              * one listing, so volumes can only appear in the first batch. */
             if (start != 0) {
                 free(entry);
-                return fail(ode, "Invalid directory cursor");
+                return fail(ode, N_("Invalid directory cursor"));
             }
         } else {
             /* Entry numbers must keep rising, or the batches would never end. */
             unsigned long entry_number = id & ENTRY_BITS;
             if (entry_number <= *last_entry || entry_number == PARENT_ENTRY) {
                 free(entry);
-                return fail(ode, "Directory cursor did not advance");
+                return fail(ode, N_("Directory cursor did not advance"));
             }
             *last_entry = entry_number;
             ++*added;
@@ -369,7 +370,7 @@ static int read_listing_batch(Ode *ode, OdeListing *listing, unsigned long start
 
         if (listing->count == ODE_MAX_ENTRIES) {
             free(entry);
-            return fail(ode, "Directory exceeds 2048 entries");
+            return fail(ode, N_("Directory exceeds 2048 entries"));
         }
         entry->toc_id = id;
         entry->is_directory = flags == RECORD_FOLDER;
@@ -388,7 +389,7 @@ int ode_read_directory(Ode *ode, OdeListing *listing)
     ode->error = NULL;
     listing->entries = (const MenuEntry **)malloc(ODE_MAX_ENTRIES * sizeof(*listing->entries));
     if (!listing->entries)
-        return fail(ode, "Not enough memory for directory");
+        return fail(ode, N_("Not enough memory for directory"));
 
     /*
      * Read listing after listing: each starts after the last entry of the
@@ -409,7 +410,7 @@ int ode_read_directory(Ode *ode, OdeListing *listing)
         }
         start = last_entry;
     }
-    fail(ode, "Directory enumeration did not finish");
+    fail(ode, N_("Directory enumeration did not finish"));
 
 error:
     ode_listing_free(listing);
@@ -530,7 +531,7 @@ int ode_launch(Ode *ode, const MenuEntry *entry)
     unsigned char reply[32];
 
     if (entry->is_directory)
-        return fail(ode, "Select a disc image to launch");
+        return fail(ode, N_("Select a disc image to launch"));
 
     if (prepare_listing_for(ode, entry) < 0)
         return -1;
@@ -540,7 +541,7 @@ int ode_launch(Ode *ode, const MenuEntry *entry)
         return -1;
     /* Bytes 1 and 2 of the reply are nonzero when the disc was queued. */
     if (!reply[1] || !reply[2])
-        return fail(ode, "ODE could not queue this image");
+        return fail(ode, N_("ODE could not queue this image"));
     return send_command(ode, CMD_START_QUEUE, 0, 0, reply, 2);
 }
 
@@ -576,29 +577,29 @@ int ode_playlist_add(Ode *ode, OdePlaylist *playlist, const MenuEntry *entry, co
     char *path;
 
     if (entry->is_directory)
-        return fail(ode, "Select a disc image to queue");
+        return fail(ode, N_("Select a disc image to queue"));
     if (!playlist->synchronized)
-        return fail(ode, "Queue uncertain. Clear it first.");
+        return fail(ode, N_("Queue uncertain. Clear it first."));
     if (playlist->dirty)
-        return fail(ode, "Apply queue edits before adding remotely");
+        return fail(ode, N_("Apply queue edits before adding remotely"));
     if (playlist->count == ODE_MAX_DISCS)
-        return fail(ode, "Disc queue is full (16 discs)");
+        return fail(ode, N_("Disc queue is full (16 discs)"));
 
     /* The disc's full path, for display and to refuse duplicates. */
     directory_length = strlen(directory);
     name_length = strlen(entry->name);
     if (directory_length > 8192 || name_length > ODE_MAX_NAME)
-        return fail(ode, "Disc queue path is too long");
+        return fail(ode, N_("Disc queue path is too long"));
     path = (char *)malloc(directory_length + name_length + 2);
     if (!path)
-        return fail(ode, "Not enough memory for disc queue");
+        return fail(ode, N_("Not enough memory for disc queue"));
     memcpy(path, directory, directory_length);
     path[directory_length] = '/';
     memcpy(path + directory_length + 1, entry->name, name_length + 1);
     for (i = 0; i < playlist->count; ++i) {
         if (!strcmp(playlist->paths[i], path)) {
             free(path);
-            return fail(ode, "This disc is already queued");
+            return fail(ode, N_("This disc is already queued"));
         }
     }
 
@@ -613,7 +614,7 @@ int ode_playlist_add(Ode *ode, OdePlaylist *playlist, const MenuEntry *entry, co
         goto uncertain;
     if (!reply[1] || !reply[2]) {
         free(path);
-        return fail(ode, "ODE could not queue this image");
+        return fail(ode, N_("ODE could not queue this image"));
     }
     playlist->paths[playlist->count++] = path;
     return 0;
@@ -634,11 +635,11 @@ int ode_playlist_start(Ode *ode, OdePlaylist *playlist)
     unsigned char reply[32];
 
     if (!playlist->synchronized)
-        return fail(ode, "Queue uncertain. Clear it first.");
+        return fail(ode, N_("Queue uncertain. Clear it first."));
     if (playlist->dirty)
-        return fail(ode, "Apply queue edits before launch");
+        return fail(ode, N_("Apply queue edits before launch"));
     if (!playlist->count)
-        return fail(ode, "Disc queue is empty");
+        return fail(ode, N_("Disc queue is empty"));
 
     /*
      * One start request launches the queue as it stands. It is not cleared
@@ -655,17 +656,17 @@ int ode_playlist_append_local(Ode *ode, OdePlaylist *playlist, const char *path)
     char *copy;
 
     if (!playlist->synchronized)
-        return fail(ode, "Queue uncertain. Clear it first.");
+        return fail(ode, N_("Queue uncertain. Clear it first."));
     if (playlist->count == ODE_MAX_DISCS || length > 9216)
-        return fail(ode, "Disc queue full or path too long");
+        return fail(ode, N_("Disc queue full or path too long"));
     for (i = 0; i < playlist->count; ++i) {
         if (!strcmp(playlist->paths[i], path))
-            return fail(ode, "This disc is already queued");
+            return fail(ode, N_("This disc is already queued"));
     }
 
     copy = (char *)malloc(length + 1);
     if (!copy)
-        return fail(ode, "Not enough queue memory");
+        return fail(ode, N_("Not enough queue memory"));
     memcpy(copy, path, length + 1);
     playlist->paths[playlist->count++] = copy;
     playlist->dirty = 1;

@@ -21,6 +21,14 @@ Keep console C code C89-compatible. Use quoted SDK headers for 3DO compilation;
 Norcroft's built-in angle-bracket stdio/stdarg headers have an incompatible
 argument-list ABI. Keep TOC IDs attached to their original names after sorting.
 
+Mark text the menu shows with `T("...")`, or `N_("...")` in a table or a
+message the screen translates when drawing it (see `src/menu_text.h`), and add
+its Ukrainian translation to `data/menu-text-uk.json`. Then run
+`python3 tools/build-menu-text.py`; `make test` fails while marked text lacks a
+translation. `python3 tools/preview-menu.py --language uk` draws the screens in
+Ukrainian and lists text cut short at the screen's edge. Keep translations about
+as long as the English, and keep button keys in hints such as `A:Play`.
+
 Some controller tests extract functions from `src/main.c`. Update their stubs
 when adding fields or dependencies. `tests/test_stack_usage.py` checks stack
 budgets; keep large paths and save archives off the 32 KiB task stack.

@@ -8,7 +8,16 @@ glyph is crisp without the stair-steps of a rasterized outline font. Use the
 proportional Latin TTFs (ark-pixel-10px-proportional-latin.ttf and
 ark-pixel-12px-proportional-latin.ttf) from
 https://github.com/TakWolf/ark-pixel-font/releases (built from 2026.10.16).
-The 4-bit coverage format is kept; coverage is always 0 or 15."""
+The 4-bit coverage format is kept; coverage is always 0 or 15.
+
+The font has printable ASCII and the letters the menu's Ukrainian text
+needs (with a few Russian ones for game names), plus the punctuation in
+EXTRA_CHARACTERS. Each style's glyphs are stored at that style's own height.
+Lines are placed by ASCII alone, as before the Cyrillic was added; a glyph
+that would not fit its style's height (a capital with an accent above, in
+the heading style) is moved up or down just enough to fit, and one too wide
+for the 16-pixel cell (an arrow, in the heading style) is drawn as '?' in
+that style."""
 import hashlib
 from pathlib import Path
 import sys
@@ -16,22 +25,31 @@ from PIL import Image, ImageDraw, ImageFont
 
 ROOT = Path(__file__).resolve().parent.parent
 
-# Each glyph is a cell of 16 x 20 pixels, 4 bits a pixel (two pixels a byte).
+# Each glyph is 16 pixels wide, 4 bits a pixel (two pixels a byte).
 CELL_WIDTH = 16
-CELL_HEIGHT = 20
 
-# The characters in the font: printable ASCII.
-CHARACTERS = "".join(chr(code) for code in range(32, 127))
+# The characters in the font: printable ASCII, then the others. Each one
+# past ASCII is found by its code point (ui_codes in the output).
+ASCII = "".join(chr(code) for code in range(32, 127))
+EXTRA_CHARACTERS = (
+    "АБВГҐДЕЄЖЗИІЇЙКЛМНОПРСТУФХЦЧШЩЬЮЯ"
+    "абвгґдеєжзиіїйклмнопрстуфхцчшщьюя"
+    "ЁЪЫЭёъыэ"  # Russian letters, for game and folder names
+    "’«»"
+    "←↑→↓"  # arrows, for the d-pad in button hints
+)
+CHARACTERS = ASCII + "".join(sorted(EXTRA_CHARACTERS))
 
 
 def render_style(path, size, height):
     """Draws every character of one style. Returns each one's advance width
-    and its packed 4-bit pixels (160 bytes), with the text's baseline placed
-    so the tallest characters are centered in `height` rows."""
+    and its packed 4-bit pixels (8 bytes a row, `height` rows), with the
+    baseline placed so ASCII's tallest characters are centered in `height`
+    rows."""
     font = ImageFont.truetype(str(path), size)
     # The space has no box, so it is left out of the measurements.
-    top = min(font.getbbox(character, anchor="ls")[1] for character in CHARACTERS[1:])
-    bottom = max(font.getbbox(character, anchor="ls")[3] for character in CHARACTERS[1:])
+    top = min(font.getbbox(character, anchor="ls")[1] for character in ASCII[1:])
+    bottom = max(font.getbbox(character, anchor="ls")[3] for character in ASCII[1:])
     if bottom - top > height:
         sys.exit(f"{path.name} at {size} px is taller than {height} rows")
     baseline = -top + (height - (bottom - top)) // 2
@@ -39,20 +57,35 @@ def render_style(path, size, height):
     advances = []
     glyphs = []
     for character in CHARACTERS:
+        glyph_top, _, _, glyph_bottom = font.getbbox(character, anchor="ls")
+        if glyph_bottom - glyph_top > height:
+            sys.exit(f"{character!r} at {size} px is taller than {height} rows")
+        # Move a glyph that would stick out of the rows into them.
+        shift = max(0, -(baseline + glyph_top)) - max(0, baseline + glyph_bottom - height)
         image = Image.new("L", (32, 32))
         draw = ImageDraw.Draw(image)
         draw.fontmode = "1"  # no antialiasing
-        draw.text((0, baseline), character, font=font, fill=255, anchor="ls")
+        draw.text((0, baseline + shift), character, font=font, fill=255, anchor="ls")
         box = image.getbbox()
+        if box and box[2] > CELL_WIDTH and character not in ASCII:
+            # Too wide for this style: draw '?' in its place.
+            character, shift = "?", 0
+            image = Image.new("L", (32, 32))
+            draw = ImageDraw.Draw(image)
+            draw.fontmode = "1"
+            draw.text((0, baseline), character, font=font, fill=255, anchor="ls")
+            box = image.getbbox()
         if box and box[2] > CELL_WIDTH:
             sys.exit(f"{character!r} at {size} px is wider than the 16-pixel cell")
+        if box and box[3] > height:
+            sys.exit(f"{character!r} at {size} px does not fit in {height} rows")
         advances.append(round(font.getlength(character)))
 
         def coverage(x, y):
             return 15 if image.getpixel((x, y)) else 0
 
         glyph = []
-        for y in range(CELL_HEIGHT):
+        for y in range(height):
             for x in range(0, CELL_WIDTH, 2):
                 glyph.append((coverage(x, y) << 4) | coverage(x + 1, y))
         glyphs.append(glyph)
@@ -64,29 +97,39 @@ def main():
         sys.exit(__doc__)
     ark10, ark12 = Path(sys.argv[1]), Path(sys.argv[2])
 
-    # (font, size, cell height) for normal, small, large and heading; heights match
-    # ui_font_height(). The heading is the 10 px design doubled, which needs all 20
-    # rows of the glyph cell.
+    # (font, size, height) for normal, small, large and heading; heights match
+    # ui_font_height(). The heading is the 10 px design doubled.
     styles = ((ark12, 12, 15), (ark10, 10, 12), (ark12, 12, 17), (ark10, 20, 20))
     rendered = [render_style(path, size, height) for path, size, height in styles]
+    count = len(CHARACTERS)
 
     output = [
         "/* Generated by tools/build-ui-font.py; OM3DO UI, derived from Ark Pixel.",
         " * 10 px source SHA256: " + hashlib.sha256(ark10.read_bytes()).hexdigest(),
         " * 12 px source SHA256: " + hashlib.sha256(ark12.read_bytes()).hexdigest(),
         " * See vendor/fonts/ark-pixel-OFL.txt for the font license. */",
-        "static const unsigned char ui_advances[%d][95] = {" % len(styles),
+        "#define UI_GLYPHS %d" % count,
+        "/* The code points of the glyphs after ASCII, in order. */",
+        "static const unsigned short ui_codes[%d] = {" % (count - len(ASCII)),
+        "    " + ",".join(f"0x{ord(c):04x}" for c in CHARACTERS[len(ASCII) :]),
+        "};",
+        "static const unsigned char ui_advances[%d][UI_GLYPHS] = {" % len(styles),
     ]
     for advances, _ in rendered:
         output.append("    {" + ",".join(map(str, advances)) + "},")
-    output += ["};", "static const unsigned char ui_glyphs[%d][95][160] = {" % len(styles)]
-    for _, glyphs in rendered:
-        output.append("    {")
+    output.append("};")
+    for index, ((_, _, height), (_, glyphs)) in enumerate(zip(styles, rendered)):
+        output.append("static const unsigned char ui_glyphs_%d[UI_GLYPHS][%d] = {" % (index, height * 8))
         for glyph in glyphs:
-            output.append("        {" + ",".join(f"0x{byte:02x}" for byte in glyph) + "},")
-        output.append("    },")
-    output += ["};"]
-    (ROOT / "src/ui_font_data.h").write_text("\n".join(output) + "\n")
+            output.append("    {" + ",".join(f"0x{byte:02x}" for byte in glyph) + "},")
+        output.append("};")
+    output += [
+        "/* Each style's glyphs, 8 bytes a row and ui_font_height(style) rows each. */",
+        "static const unsigned char *const ui_glyphs[%d] = {" % len(styles),
+        "    " + ", ".join("ui_glyphs_%d[0]" % index for index in range(len(styles))),
+        "};",
+    ]
+    (ROOT / "src/ui_font_data.h").write_text("\n".join(output) + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":

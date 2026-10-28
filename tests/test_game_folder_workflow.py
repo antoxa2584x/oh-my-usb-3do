@@ -185,7 +185,7 @@ with tempfile.TemporaryDirectory(prefix="oh3do-game-folder-") as directory:
     code, binary = Path(directory) / "test.c", Path(directory) / "test"
     # The launch controller frees its listing after a successful mount. Borrowed
     # entries remain owned by this test, so only stub this allocation operation.
-    code.write_text(stubs + "\n#define ode_listing_free(p) ((void)(p))\n" + controller + checks)
+    code.write_text('#include "menu_text.h"\n' + stubs + "\n#define ode_listing_free(p) ((void)(p))\n" + controller + checks)
     subprocess.run(
         [
             os.environ.get("CC", "cc"),
@@ -195,6 +195,7 @@ with tempfile.TemporaryDirectory(prefix="oh3do-game-folder-") as directory:
             "-Werror",
             "-Isrc",
             str(code),
+            str(root / "src/menu_text.c"),
             "src/ode.c",
             "src/library_features.c",
             "src/menu_ui.c",

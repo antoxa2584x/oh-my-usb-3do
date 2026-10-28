@@ -6,10 +6,12 @@ OM3DVID_DECODER = om3dvid/src/om3dvid7_decoder.c
 OM3DVID_PLAYER = om3dvid/src/om3dvid7_player.c
 
 .PHONY: test test-firmware test-covers test-sdk test-media clean
-test: build/test_game_info build/test_menu_help build/test_menu_categories build/test_save_catalog build/test_save_cheats build/test_cover_cache build/test_om3dvid7_sound build/test_ui_font build/test_usb_media build/test_usb_media_sdk build/test_menu_position build/test_library_navigation build/test_library_features build/test_bus_diagnostics build/test_nvram build/test_saves build/test_menu_sort build/test_ode build/test_menu_config build/test_menu_ui build/test_usb_art build/test_save_names build/test_om3dvid7_encoder build/test_om3dvid7_player build/test_om3dvid7_reader build/test_preview_stream
+test: build/test_game_info build/test_menu_help build/test_menu_categories build/test_save_catalog build/test_save_cheats build/test_cover_cache build/test_om3dvid7_sound build/test_ui_font build/test_usb_media build/test_usb_media_sdk build/test_menu_position build/test_library_navigation build/test_library_features build/test_bus_diagnostics build/test_nvram build/test_saves build/test_menu_sort build/test_ode build/test_menu_config build/test_menu_ui build/test_usb_art build/test_save_names build/test_om3dvid7_encoder build/test_om3dvid7_player build/test_om3dvid7_reader build/test_preview_stream build/test_menu_text
 	python3 tools/build-save-names.py --check
+	python3 tools/build-menu-text.py --check
 	./build/test_game_info tests/fixtures/game-info.txt
 	./build/test_menu_help
+	./build/test_menu_text
 	./build/test_menu_categories
 	./build/test_save_catalog
 	python3 tools/build-save-cheats.py --check --binary build/save-cheats.3db
@@ -84,7 +86,7 @@ build/test_usb_art: src/usb_art.c src/usb_file.c src/usb_art.h src/menu_config.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) -Isrc $(OM3DVID_INCLUDE) src/usb_art.c src/usb_file.c src/menu_ui.c src/menu_categories.c src/cover_catalog.c tests/test_usb_art.c $(LDFLAGS) -o $@
 
 clean:
-	rm -f build/test_om3dvid7_encoder build/test_om3dvid7_player build/test_om3dvid7_reader build/test_preview_stream build/test-om3dvid7.3dv build/test_game_info build/test_menu_help build/test_save_cheats build/test_cover_cache build/test_om3dvid7_sound build/test_ui_font build/test_usb_media build/test_usb_media_sdk build/test_menu_position build/test_library_navigation build/test_library_features build/test_bus_diagnostics build/test_nvram build/test_saves build/test_menu_sort build/test_ode build/test_menu_config build/test_menu_ui build/test_usb_art build/test_save_names
+	rm -f build/test_om3dvid7_encoder build/test_om3dvid7_player build/test_om3dvid7_reader build/test_preview_stream build/test-om3dvid7.3dv build/test_game_info build/test_menu_help build/test_save_cheats build/test_cover_cache build/test_om3dvid7_sound build/test_ui_font build/test_usb_media build/test_usb_media_sdk build/test_menu_position build/test_library_navigation build/test_library_features build/test_bus_diagnostics build/test_nvram build/test_saves build/test_menu_sort build/test_ode build/test_menu_config build/test_menu_ui build/test_usb_art build/test_save_names build/test_menu_text
 
 build/test_saves: src/save_archive.c src/save_archive.h src/save_usb.c src/save_usb.h src/usb_art.c src/usb_file.c src/usb_file.h src/menu_ui.c src/menu_categories.c src/menu_ui.h src/cover_catalog.c src/menu_settings.c src/menu_settings.h src/menu_config.c tests/test_saves.c
 	mkdir -p build
@@ -176,17 +178,21 @@ build/test_save_cheats: src/save_cheats.c src/save_cheats.h src/save_cheat_db.h 
 	mkdir -p build
 	$(CC) $(CPPFLAGS) $(CFLAGS) -Isrc $(OM3DVID_INCLUDE) src/save_cheats.c src/save_archive.c src/usb_art.c src/usb_file.c src/menu_ui.c src/menu_categories.c src/cover_catalog.c tests/test_save_cheats.c $(LDFLAGS) -o $@
 
-build/test_save_catalog: src/save_catalog.c src/save_catalog.h src/save_name_db.h src/save_names.c src/save_archive.c src/usb_art.c src/usb_file.c tests/test_save_catalog.c
+build/test_save_catalog: src/save_catalog.c src/save_catalog.h src/save_name_db.h src/save_names.c src/save_archive.c src/usb_art.c src/usb_file.c tests/test_save_catalog.c src/menu_text.c src/menu_text_data.h
 	mkdir -p build
-	$(CC) $(CPPFLAGS) $(CFLAGS) -Isrc $(OM3DVID_INCLUDE) src/save_catalog.c src/save_names.c src/save_archive.c src/usb_art.c src/usb_file.c src/menu_ui.c src/menu_categories.c src/cover_catalog.c tests/test_save_catalog.c $(LDFLAGS) -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) -Isrc $(OM3DVID_INCLUDE) src/save_catalog.c src/save_names.c src/save_archive.c src/usb_art.c src/usb_file.c src/menu_ui.c src/menu_categories.c src/cover_catalog.c src/menu_text.c tests/test_save_catalog.c $(LDFLAGS) -o $@
 
 build/test_menu_categories: src/menu_categories.c src/menu_categories.h src/menu_ui.c tests/test_menu_categories.c
 	mkdir -p build
 	$(CC) $(CPPFLAGS) $(CFLAGS) -Isrc $(OM3DVID_INCLUDE) src/menu_categories.c src/menu_ui.c src/cover_catalog.c tests/test_menu_categories.c $(LDFLAGS) -o $@
 
-build/test_menu_help: src/menu_help.c src/menu_help.h tests/test_menu_help.c
+build/test_menu_text: src/menu_text.c src/menu_text.h src/menu_text_data.h tests/test_menu_text.c
 	mkdir -p build
-	$(CC) $(CPPFLAGS) $(CFLAGS) -Isrc $(OM3DVID_INCLUDE) src/menu_help.c tests/test_menu_help.c $(LDFLAGS) -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) -Isrc src/menu_text.c tests/test_menu_text.c $(LDFLAGS) -o $@
+
+build/test_menu_help: src/menu_help.c src/menu_help.h tests/test_menu_help.c src/menu_text.c src/menu_text_data.h
+	mkdir -p build
+	$(CC) $(CPPFLAGS) $(CFLAGS) -Isrc $(OM3DVID_INCLUDE) src/menu_help.c src/menu_text.c tests/test_menu_help.c $(LDFLAGS) -o $@
 
 build/test_game_info: src/game_info.c src/game_info.h tests/test_game_info.c
 	mkdir -p build

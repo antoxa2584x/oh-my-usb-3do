@@ -3,6 +3,7 @@
  * menu_settings.c for writing it.
  */
 #include "menu_config.h"
+#include "menu_text.h"
 #include <string.h>
 
 /* The UTF-8 "byte order mark" some Windows editors put at the start of a file. */
@@ -31,17 +32,18 @@ enum {
     SETTING_VIDEO_PREVIEWS,
     SETTING_PREVIEW_SOUND,
     SETTING_HIDE_ADULT,
+    SETTING_LANGUAGE,
     SETTING_COUNT
 };
 
 static const char *const setting_names[SETTING_COUNT] = {
     "folder_workaround", "usb_covers",     "screen_margin", "large_titles", "remember_position",
-    "recent_games",      "video_previews", "preview_sound", "hide_adult"};
+    "recent_games",      "video_previews", "preview_sound", "hide_adult",   "language"};
 
 /*
  * The settings every file the menu writes includes before its end line. The
- * newest setting, hide_adult, is optional so files from older menus still
- * load.
+ * newest settings, hide_adult and language, are optional so files from older
+ * menus still load.
  */
 #define REQUIRED_SETTINGS 0xffU
 
@@ -69,6 +71,8 @@ static int largest_value(int setting)
         return MENU_MARGIN_MAX;
     if (setting == SETTING_FOLDER_WORKAROUND)
         return MENU_WORKAROUND_OFF;
+    if (setting == SETTING_LANGUAGE)
+        return MENU_LANGUAGE_LAST;
     return 1; /* everything else is off (0) or on (1) */
 }
 
@@ -153,6 +157,7 @@ int menu_config_parse(MenuConfig *config, const char *data, size_t length)
     values[SETTING_VIDEO_PREVIEWS] = defaults.video_previews;
     values[SETTING_PREVIEW_SOUND] = defaults.preview_sound;
     values[SETTING_HIDE_ADULT] = defaults.hide_adult;
+    values[SETTING_LANGUAGE] = defaults.language;
     menu_config_defaults(config);
 
     if (length > MENU_CONFIG_BYTES)
@@ -232,6 +237,7 @@ int menu_config_parse(MenuConfig *config, const char *data, size_t length)
     config->video_previews = values[SETTING_VIDEO_PREVIEWS];
     config->preview_sound = values[SETTING_PREVIEW_SOUND];
     config->hide_adult = values[SETTING_HIDE_ADULT];
+    config->language = values[SETTING_LANGUAGE];
     return 0;
 }
 
@@ -245,7 +251,7 @@ static int send_command(Ode *ode, const unsigned char *packet, unsigned char *re
     size_t length = 0;
     if (ode->transfer(ode->context, packet, reply, 32, &length) < 0 || length != expected ||
         reply[0] != packet[0] || (reply[length - 1] & FCARE_STATUS_ERROR)) {
-        ode->error = "USB config command failed";
+        ode->error = N_("USB config command failed");
         return -1;
     }
     return 0;
@@ -301,7 +307,7 @@ static int load_config_file(Ode *ode, OdeReadBuffer read_buffer, MenuConfig *con
     if (send_command(ode, packet, reply, 3) < 0)
         return -1;
     if (!reply[1]) {
-        ode->error = "Cannot open USB config";
+        ode->error = N_("Cannot open USB config");
         return -2;
     }
 
@@ -324,13 +330,13 @@ static int load_config_file(Ode *ode, OdeReadBuffer read_buffer, MenuConfig *con
     if (send_command(ode, packet, reply, 4) < 0)
         goto close_file;
     if (reply[1] != packet[1] || reply[2] != packet[2]) {
-        ode->error = "Cannot read USB config";
+        ode->error = N_("Cannot read USB config");
         goto close_file;
     }
 
     /* Copy the buffer to the console. */
     if (read_buffer(ode->context, data, sizeof(data)) < 0) {
-        ode->error = "USB config data read failed";
+        ode->error = N_("USB config data read failed");
         goto close_file;
     }
 
@@ -339,7 +345,7 @@ static int load_config_file(Ode *ode, OdeReadBuffer read_buffer, MenuConfig *con
     }
     result = menu_config_parse(config, (const char *)data, length);
     if (result < 0)
-        ode->error = "Invalid USB config; defaults used";
+        ode->error = N_("Invalid USB config; defaults used");
 
 close_file:
     memset(packet, 0, sizeof(packet));

@@ -21,6 +21,7 @@
 #include "menu_config.h"
 #include "menu_ui.h"
 #include "menu_help.h"
+#include "menu_text.h"
 #include "game_info.h"
 #include "usb_art.h"
 #include "cover_cache.h"
@@ -101,6 +102,7 @@ void om3dvid7_sound_player_stop(void *sound)
     om3dvid7_sound_close((Om3dvid7Sound *)sound);
 }
 #define UI_PREVIEW_TEXT(s) printf("L %s\n", s)
+#define UI_PREVIEW_CLIPPED(s) printf("C %s\n", s)
 /* Glass: screen*keep/8 + color*(8-keep)/8, placed exactly as rectangle() places fills. */
 #define UI_PREVIEW_GLASS(menu, x, y, w, h, color, keep)                                            \
     do {                                                                                           \

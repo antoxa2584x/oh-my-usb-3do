@@ -76,7 +76,7 @@ int main(void)
 """
 with tempfile.TemporaryDirectory(prefix="oh3do-favorites-") as directory:
     code, binary = Path(directory) / "test.c", Path(directory) / "test"
-    code.write_text(harness + read + edit + checks)
+    code.write_text('#include "menu_text.h"\n' + harness + read + edit + checks)
     subprocess.run(
         [
             os.environ.get("CC", "cc"),
@@ -87,6 +87,7 @@ with tempfile.TemporaryDirectory(prefix="oh3do-favorites-") as directory:
             "-I",
             str(root / "src"),
             str(code),
+            str(root / "src/menu_text.c"),
             str(root / "src/library_features.c"),
             str(root / "src/menu_ui.c"),
             str(root / "src/menu_categories.c"),

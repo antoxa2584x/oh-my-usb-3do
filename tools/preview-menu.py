@@ -26,6 +26,7 @@ import re
 import shutil
 import struct
 import subprocess
+import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -39,6 +40,7 @@ MENU_SOURCES = [
     "ode.c",
     "menu_sort.c",
     "menu_help.c",
+    "menu_text.c",
     "game_info.c",
     "menu_ui.c",
     "menu_categories.c",
@@ -410,8 +412,8 @@ def commands_to_svg(commands, font, logo_size):
     ]
     for command in commands:
         kind = command[:2]
-        if kind == "L ":
-            continue  # the text's content, already drawn by another command
+        if kind in ("L ", "C "):
+            continue  # the text's content (or that it was cut short), drawn by another command
         if kind == "B ":
             svg += bitmap_text(command.split())
         elif kind == "P ":
@@ -462,19 +464,35 @@ def write_png(svg_path, directory):
     print(png)
 
 
-def render_screens(binary, directory):
+def render_screens(binary, directory, language=None):
+    """Renders every screen; with a language, in that language (named
+    menu-preview-LANGUAGE-MODE) without the English checks, and lists the
+    text the screen's edge cuts short."""
     font = load_sdk_font()
     logo_size = struct.unpack_from(">II", (ROOT / "assets/logo-menu.png").read_bytes(), 16)
+    clipped = {}
     for mode in RENDER_MODES:
         commands = run_mode(binary, mode)
-        check_screen(mode, commands)
-        target = OUTPUT / f"menu-preview-{mode}.svg"
-        target.write_text(commands_to_svg(commands, font, logo_size))
+        if not language:
+            check_screen(mode, commands)
+        for command in commands:
+            if command.startswith("C "):
+                clipped.setdefault(command[2:], mode)
+        name = f"menu-preview-{language}-{mode}" if language else f"menu-preview-{mode}"
+        target = OUTPUT / f"{name}.svg"
+        target.write_text(commands_to_svg(commands, font, logo_size), encoding="utf-8")
         print(target)
         write_png(target, directory)
+    for text, mode in clipped.items():
+        print(f"Cut short at the screen's edge ({mode}): {text}")
 
 
 def main():
+    # --language uk: draw the screens in Ukrainian, skipping the English checks.
+    language = None
+    if len(sys.argv) == 3 and sys.argv[1] == "--language":
+        language = sys.argv[2]
+        os.environ["OH3DO_PREVIEW_LANGUAGE"] = language
     OUTPUT.mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="oh3do-preview-") as directory:
         code = Path(directory) / "preview.c"
@@ -482,8 +500,9 @@ def main():
         code.write_text(generated_program())
         (OUTPUT / "menu-preview.c").write_text(code.read_text())
         compile_program(code, binary)
-        run_self_tests(binary)
-        render_screens(binary, directory)
+        if not language:
+            run_self_tests(binary)
+        render_screens(binary, directory, language)
 
 
 if __name__ == "__main__":

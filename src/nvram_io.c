@@ -8,6 +8,7 @@
  * which waits for it to finish.
  */
 #include "nvram_io.h"
+#include "menu_text.h"
 #include "menu_ui.h"
 #include "types.h"
 #include "io.h"
@@ -110,7 +111,7 @@ static int read_space(NvramInfo *info)
     /* Status of the whole file system comes from opening its top folder. */
     file = OpenDiskFile("/NVRAM");
     if (file < 0)
-        return failure(info, "NVRAM is unavailable", file);
+        return failure(info, N_("NVRAM is unavailable"), file);
 
     request = CreateIOReq(NULL, 0, file, 0);
     if (request >= 0) {
@@ -134,7 +135,7 @@ static int read_space(NvramInfo *info)
         DeleteIOReq(request);
     }
     CloseDiskFile(file);
-    return result < 0 ? failure(info, "Cannot read NVRAM free space", result) : 0;
+    return result < 0 ? failure(info, N_("Cannot read NVRAM free space"), result) : 0;
 }
 
 /*
@@ -215,7 +216,7 @@ int nvram_snapshot(SaveArchive *archive, NvramInfo *info)
 
     directory = OpenDirectoryPath("/NVRAM");
     if (!directory)
-        return failure(info, "Cannot open NVRAM directory", -1);
+        return failure(info, N_("Cannot open NVRAM directory"), -1);
     entries = (SaveEntry *)calloc(SAVE_MAX_FILES, sizeof(*entries));
     storage = (unsigned char *)malloc(SAVE_MAX_BYTES);
     if (!entries || !storage)
@@ -253,7 +254,7 @@ done:
     free(entries);
     free(storage);
     CloseDirectory(directory);
-    return result < 0 ? failure(info, "NVRAM scan failed; no backup made", -1) : 0;
+    return result < 0 ? failure(info, N_("NVRAM scan failed; no backup made"), -1) : 0;
 }
 
 int nvram_preflight(const SaveEntry *entry, NvramInfo *info)
@@ -265,7 +266,7 @@ int nvram_preflight(const SaveEntry *entry, NvramInfo *info)
     int result;
 
     if (!save_name_valid(entry->name) || entry->size > NVRAM_BYTES)
-        return failure(info, "Invalid save file", -1);
+        return failure(info, N_("Invalid save file"), -1);
     if (read_space(info) < 0)
         return -1;
 
@@ -280,10 +281,10 @@ int nvram_preflight(const SaveEntry *entry, NvramInfo *info)
         CloseDiskFile(file);
         if (result < 0 || stat.fs.ds_DeviceBlockSize != info->block_size ||
             stat.fs.ds_DeviceBlockCount > SAVE_MAX_BYTES / info->block_size)
-            return failure(info, "Cannot check existing save", -1);
+            return failure(info, N_("Cannot check existing save"), -1);
         already_allocated = stat.fs.ds_DeviceBlockCount * info->block_size;
     } else if (file != NO_FILE_ERROR) {
-        return failure(info, "Cannot check existing save", file);
+        return failure(info, N_("Cannot check existing save"), file);
     }
 
     /* Only growth needs free space; a new file also needs the allowance. */
@@ -291,7 +292,7 @@ int nvram_preflight(const SaveEntry *entry, NvramInfo *info)
     if (needed > already_allocated) {
         extra = needed - already_allocated + (file < 0 ? NEW_FILE_ALLOWANCE : 0UL);
         if (extra > info->free_bytes || extra > info->max_file_bytes)
-            return failure(info, "Not enough NVRAM space", -1);
+            return failure(info, N_("Not enough NVRAM space"), -1);
     }
     return 0;
 }
@@ -382,5 +383,5 @@ done:
         DeleteIOReq(request);
     if (file >= 0)
         CloseDiskFile(file);
-    return result < 0 ? failure(info, "Restore failed. Keep recovery backup.", -1) : 0;
+    return result < 0 ? failure(info, N_("Restore failed. Keep recovery backup."), -1) : 0;
 }

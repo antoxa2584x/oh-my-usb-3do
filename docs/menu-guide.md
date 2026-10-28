@@ -112,7 +112,7 @@ media tools, replacing `M:/` with your drive letter.
 
 ## Display preferences and configuration
 
-Open **Tools → Settings** to change screen margins, title size, covers,
+Open **Tools → Settings** to change the language (English or Ukrainian), screen margins, title size, covers,
 previews, sound, remembered position and recent games. Use Left/Right or A to
 change a value, and **C** to save. Some options require a cold boot.
 

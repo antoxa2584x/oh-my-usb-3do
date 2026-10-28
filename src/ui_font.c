@@ -3,10 +3,18 @@
  *
  * Glyph data (from ui_font_data.h), for each of the four base styles:
  *   ui_advances[style][glyph]  how far the pen moves after the glyph, in pixels
- *   ui_glyphs[style][glyph]    the glyph's picture: 20 rows of 16 pixels,
+ *   ui_glyphs[style]           the style's glyph pictures, one after another:
+ *                              ui_font_height(style) rows of 16 pixels each,
  *                              4 bits per pixel, so 8 bytes per row; the
  *                              left pixel of each pair is in the high 4 bits
- * Glyph 0 is the space character (ASCII 32), glyph 94 is '~' (ASCII 126).
+ * Glyph 0 is the space character (ASCII 32), glyph 94 is '~' (ASCII 126), and
+ * the rest are the code points in ui_codes, in order.
+ *
+ * Text is UTF-8. A character's first byte carries its whole width and
+ * picture, and the bytes after it in a multi-byte character have none, so
+ * functions that count bytes (fits, tails, scroll offsets) still work: a
+ * character is never measured twice, and starting or stopping inside one
+ * just leaves it out.
  */
 #include "ui_font.h"
 #include "ui_font_data.h"
@@ -17,10 +25,57 @@
 #define GLYPH_ROW_BYTES  8
 #define BASE_STYLE_COUNT 4
 
-/* The glyph number for a character; anything outside printable ASCII is '?'. */
-static int glyph_index(unsigned char c)
+/* Glyph number for no glyph at all: the later bytes of a character. */
+#define NO_GLYPH      (-1)
+#define UNKNOWN_GLYPH ('?' - 32)
+
+/* The glyph for the character starting at `text`: printable ASCII, a
+ * character in ui_codes, NO_GLYPH for a byte inside a character, and '?'
+ * for anything else (including a character cut short). */
+static int glyph_index(const char *text)
 {
-    return c >= 32 && c <= 126 ? c - 32 : '?' - 32;
+    const unsigned char *bytes = (const unsigned char *)text;
+    unsigned long code;
+    int low, high;
+    if (bytes[0] < 0x80)
+        return bytes[0] >= 32 && bytes[0] <= 126 ? bytes[0] - 32 : UNKNOWN_GLYPH;
+    if ((bytes[0] & 0xc0U) == 0x80U)
+        return NO_GLYPH;
+    /* Only two-byte characters (up to U+07FF) and three-byte ones are drawn. */
+    if ((bytes[0] & 0xe0U) == 0xc0U) {
+        if ((bytes[1] & 0xc0U) != 0x80U)
+            return UNKNOWN_GLYPH;
+        code = ((bytes[0] & 0x1fUL) << 6) | (bytes[1] & 0x3fUL);
+    } else if ((bytes[0] & 0xf0U) == 0xe0U) {
+        if ((bytes[1] & 0xc0U) != 0x80U || (bytes[2] & 0xc0U) != 0x80U)
+            return UNKNOWN_GLYPH;
+        code = ((bytes[0] & 0x0fUL) << 12) | ((bytes[1] & 0x3fUL) << 6) | (bytes[2] & 0x3fUL);
+    } else
+        return UNKNOWN_GLYPH;
+    low = 0;
+    high = (int)(sizeof(ui_codes) / sizeof(ui_codes[0]));
+    while (low < high) {
+        int mid = (low + high) / 2;
+        if (ui_codes[mid] < code)
+            low = mid + 1;
+        else
+            high = mid;
+    }
+    if (low < (int)(sizeof(ui_codes) / sizeof(ui_codes[0])) && ui_codes[low] == code)
+        return 95 + low;
+    return UNKNOWN_GLYPH;
+}
+
+/* How many bytes the character starting at `text` takes (1 for a stray
+ * byte), so a fit never ends inside a character. */
+static size_t character_bytes(const char *text)
+{
+    unsigned char first = (unsigned char)text[0];
+    size_t count = 1;
+    if (first >= 0xc0)
+        while (count < 4 && ((unsigned char)text[count] & 0xc0U) == 0x80U)
+            ++count;
+    return count;
 }
 
 /* Which glyph table a style uses: small bold reuses the small glyphs. */
@@ -37,7 +92,10 @@ static int base_style(int style)
  * pixel wider, so every visible bold glyph (not the space) takes one more. */
 static int glyph_advance(int style, int glyph)
 {
-    int advance = ui_advances[base_style(style)][glyph];
+    int advance;
+    if (glyph == NO_GLYPH)
+        return 0;
+    advance = ui_advances[base_style(style)][glyph];
     if (style == UI_FONT_SMALL_BOLD && glyph != 0)
         advance += 1;
     return advance;
@@ -52,8 +110,8 @@ int ui_font_height(int style)
 int ui_font_width(const char *text, int style)
 {
     int width = 0;
-    while (*text)
-        width += glyph_advance(style, glyph_index((unsigned char)*text++));
+    for (; *text; ++text)
+        width += glyph_advance(style, glyph_index(text));
     return width;
 }
 
@@ -63,11 +121,12 @@ size_t ui_font_fit(const char *text, size_t length, int pixels, int style)
     int width = 0;
 
     while (count < length && text[count]) {
-        int advance = glyph_advance(style, glyph_index((unsigned char)text[count]));
-        if (width + advance > pixels)
+        int advance = glyph_advance(style, glyph_index(text + count));
+        size_t bytes = character_bytes(text + count);
+        if (width + advance > pixels || count + bytes > length)
             break;
         width += advance;
-        ++count;
+        count += bytes;
     }
     return count;
 }
@@ -79,11 +138,16 @@ size_t ui_font_tail_start(const char *text, size_t length, int pixels, int style
 
     /* Add characters from the end backwards while they still fit. */
     while (start > 0) {
-        int advance = glyph_advance(style, glyph_index((unsigned char)text[start - 1]));
+        size_t first = start - 1;
+        int advance;
+        /* Step back over a whole character: its later bytes, then its first. */
+        while (first > 0 && ((unsigned char)text[first] & 0xc0U) == 0x80U)
+            --first;
+        advance = glyph_advance(style, glyph_index(text + first));
         if (width + advance > pixels)
             break;
         width += advance;
-        --start;
+        start = first;
     }
     return start;
 }
@@ -210,18 +274,22 @@ int ui_font_render(unsigned char *out, const char *text, int style, int max_widt
     memset(out, 0, UI_FONT_STRIDE * UI_FONT_HEIGHT);
 
     while (*text) {
-        int glyph = glyph_index((unsigned char)*text++);
+        int glyph = glyph_index(text++);
         int advance = glyph_advance(style, glyph);
+        const unsigned char *picture;
         int row, column;
 
+        if (glyph == NO_GLYPH)
+            continue;
         if (pen_x + advance > max_width)
             break; /* the next character would not fit: stop */
+        picture = ui_glyphs[table] + (size_t)glyph * (size_t)height * GLYPH_ROW_BYTES;
 
         /* Copy the glyph's pixels, keeping the stronger ink where glyphs
          * overlap (a glyph's picture can extend past its advance). */
         for (row = 0; row < height; ++row) {
             for (column = 0; column < GLYPH_WIDTH && pen_x + column < max_width; ++column) {
-                unsigned int packed = ui_glyphs[table][glyph][row * GLYPH_ROW_BYTES + column / 2];
+                unsigned int packed = picture[row * GLYPH_ROW_BYTES + column / 2];
                 unsigned int coverage = (column & 1) ? packed & 15U : packed >> 4;
                 int x = pen_x + column;
 
