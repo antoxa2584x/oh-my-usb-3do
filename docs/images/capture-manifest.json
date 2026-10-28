@@ -25,12 +25,6 @@
     "fixtures": "Disposable libraries and save archives with real artwork"
   },
   "captures": {
-    "startup.png": {
-      "component": "menu",
-      "version": "1.0.1",
-      "capture": "build/release-1.0.1-validation/shots/gallery/startup-04s.ppm",
-      "sha256": "115d9fcbf13aa2dff4b3a57aea7154f45fc3ed17471f792969b7780df22bf3b9"
-    },
     "gecko-tv.png": {
       "component": "menu",
       "version": "1.0.1",

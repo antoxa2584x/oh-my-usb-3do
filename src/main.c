@@ -174,7 +174,7 @@ typedef struct ScrollMeasure {
 
 /* Startup steps, timed for the diagnostics screen, in order. */
 enum {
-    BOOT_SPLASH,
+    BOOT_LOADER,
     BOOT_ART,
     BOOT_IDENTIFY,
     BOOT_CONFIG,
@@ -190,7 +190,7 @@ enum {
     BOOT_STEPS
 };
 static const char *const boot_step_names[BOOT_STEPS] = {
-    "splash",     "art",    "identify", "config",   "saves",    "queue", "folder",
+    "loader",     "art",    "identify", "config",   "saves",    "queue", "folder",
     "categories", "covers", "previews", "metadata", "position", "ready"};
 
 /* One cached piece of text: its picture, and what it was drawn with. */
@@ -242,13 +242,11 @@ typedef struct Menu {
     int clear_frames;
 
     /* ---- Startup ---- */
-    CCB *splash;
     int booting, boot_stage;
-    int splash_frames; /* full splash draws so far: both buffers need one */
     /* Startup timing for diagnostics: the clock when main began (time since
      * power-on), then each step's end, in ms after that. */
     unsigned long boot_at, boot_ms[BOOT_STEPS], boot_commands[BOOT_STEPS];
-    unsigned long boot_draws, boot_draw_ms;              /* splash redraws while starting */
+    unsigned long boot_draws, boot_draw_ms;              /* loader redraws while starting */
     unsigned long boot_kind_count[17], boot_kind_ms[17]; /* the bus's command times when ready */
 
     /* ---- The drive emulator ---- */
@@ -1593,67 +1591,9 @@ static void draw_channel_gecko(Menu *menu)
     }
     draw_ui_cel(menu, menu->channel_gecko, 148, 1, 1, 0);
 }
-/* The static shows through the splash's screen opening (x 10-309, y 10-229)
- * around its solid logo panel (x 52-267, y 62-173); assets/startup.cel. Once
- * both buffers hold the panel, a frame repaints only these strips, in pieces
- * no wider than the static's source at double size. */
-/* The startup static changes about 8 times a second: each frame costs
- * about 18 ms on the console, while the menu is busy starting. */
-#define BOOT_STATIC_MS 125UL
-static const short splash_static[6][4] = {{10, 10, 150, 52},  {160, 10, 150, 52},
-                                          {10, 174, 150, 56}, {160, 174, 150, 56},
-                                          {10, 62, 42, 112},  {268, 62, 42, 112}};
-/* An uncoded 16-bit cel cut down to w x h pixels starting at source. */
-static void cel_part(CCB *cel, const unsigned short *source, int w, int h)
-{
-    cel->ccb_SourcePtr = (CelData *)(void *)source;
-    cel->ccb_PRE0 = (cel->ccb_PRE0 & ~0x0000ffc0UL) | ((unsigned long)(h - 1) << 6);
-    cel->ccb_PRE1 = (cel->ccb_PRE1 & ~0x000007ffUL) | (unsigned long)(w - 1);
-    cel->ccb_Width = w;
-    cel->ccb_Height = h;
-}
-/* Static over one strip, from a random place in its source. */
-static void noise_part(Menu *menu, const short *strip, unsigned long seed)
-{
-    CCB copy;
-    unsigned long rows = (unsigned long)strip[3] / 2, cols = (unsigned long)strip[2] / 2, row, col;
-    /* Scramble the seed's bits (a standard integer hash finisher), so
-     * consecutive seeds land far apart. */
-    seed ^= seed >> 15;
-    seed *= 2246822519UL;
-    seed ^= seed >> 13;
-    row = seed % (NOISE_ROWS - rows + 1);
-    /* Even columns keep the source word-aligned for the cel engine. */
-    col = ((seed >> 16) % ((NOISE_W - cols) / 2 + 1)) * 2;
-    memcpy(&copy, menu->noise, sizeof(copy));
-    cel_part(&copy, menu->noise_pixels + row * NOISE_W + col, (int)cols, (int)rows);
-    draw_ui_cel(menu, &copy, strip[0], strip[1], 2, 0);
-}
-/* The splash's own pixels over one strip: its corners and channel number. */
-static void splash_part(Menu *menu, const short *strip)
-{
-    CCB copy;
-    memcpy(&copy, menu->splash, sizeof(copy));
-    cel_part(&copy, (const unsigned short *)menu->splash->ccb_SourcePtr + strip[1] * 320 + strip[0],
-             strip[2], strip[3]);
-    copy.ccb_XPos = (long)strip[0] << 16;
-    copy.ccb_YPos = (long)strip[1] << 16;
-    DrawCels(menu->screen.sc_BitmapItems[menu->screen.sc_curScreen], &copy);
-}
-/* A 172x240 strip of TV static at x, drawn at 2x; a new seed picks a new
- * frame. */
-static void noise_at(Menu *menu, int x, unsigned long seed)
-{
-    CCB copy;
-    seed ^= seed >> 15;
-    seed *= 2246822519UL;
-    seed ^= seed >> 13;
-    memcpy(&copy, menu->noise, sizeof(copy));
-    /* Even pixel offsets keep the source word-aligned for the cel engine. */
-    copy.ccb_SourcePtr =
-        (CelData *)(void *)(menu->noise_pixels + (seed % ((NOISE_ROWS - 120) * NOISE_W / 2)) * 2);
-    draw_ui_cel(menu, &copy, x, 0, 2, 0);
-}
+/* While the menu starts, the loader is redrawn at most about 8 times a
+ * second, so drawing takes little from the work of starting. */
+#define BOOT_REDRAW_MS 125UL
 /* The tube's rounded corners over whatever the screen just showed. A negative
  * direction draws the cel mirrored back from its position, so mirrored
  * corners start one past the screen's last pixel. */
@@ -2747,38 +2687,40 @@ static void browser_save(Menu *menu, BrowserFrame *frame, unsigned long shell,
     memcpy(frame->scroll_length, menu->scroll_length, sizeof(frame->scroll_length));
     memcpy(frame->scroll_visible, menu->scroll_visible, sizeof(frame->scroll_visible));
 }
-/* Startup: live static shows through the splash's transparent tube, and the
- * tuning bar fills a quarter per startup stage. Drawn without screen margins,
- * like the boot banner it replaces. */
+/*
+ * Startup: the loader. The logo, what the menu is doing, and a bar that
+ * fills a quarter per startup stage, its next segment blinking to show the
+ * menu is still working. Drawn without screen margins, like the boot banner
+ * it follows.
+ *
+ * The menu used to show a full-screen TV picture here (startup.cel) with
+ * live static behind it, but one console showed only a black screen after
+ * the boot banner until it was replaced with plain drawing like this.
+ */
 static void boot_screen(Menu *menu, unsigned long now)
 {
-    int margin = menu->config.screen_margin, i;
+    const char *status = menu->message ? menu->message : "Loading...";
+    int margin = menu->config.screen_margin, lit = menu->boot_stage * 4, i;
     unsigned long started = now_ms(menu);
     menu->config.screen_margin = 0;
     menu->screen.sc_curScreen ^= 1;
-    if (menu->splash) {
-        crt_cels(menu);
-        if (menu->noise && menu->splash_frames >= 2) {
-            for (i = 0; i < 6; ++i)
-                noise_part(menu, splash_static[i],
-                           (now / BOOT_STATIC_MS + 1UL) * 2654435761UL +
-                               (unsigned long)i * 40503UL);
-            for (i = 0; i < 6; ++i)
-                splash_part(menu, splash_static[i]);
-        } else {
-            if (menu->noise) {
-                noise_at(menu, 0, (now / BOOT_STATIC_MS + 1UL) * 2654435761UL);
-                noise_at(menu, 160, (now / BOOT_STATIC_MS + 1UL) * 40503UL);
-            } else
-                rectangle(menu, 0, 0, 320, 240, DIM);
-            DrawCels(menu->screen.sc_BitmapItems[menu->screen.sc_curScreen], menu->splash);
-            ++menu->splash_frames;
-        }
-        for (i = 0; i < 16; ++i)
-            rectangle(menu, 120 + i * 5, 206, 3, 7,
-                      i < menu->boot_stage * 4 ? OSD_GREEN : MakeRGB15(3, 8, 3));
+    rectangle(menu, 0, 0, 320, 240, BG);
+    if (menu->logo) {
+        CCB logo = *menu->logo;
+        logo.ccb_XPos = (long)((320 - logo.ccb_Width) / 2) << 16;
+        logo.ccb_YPos = 84L << 16;
+        draw_cel(menu, &logo);
     } else
-        rectangle(menu, 0, 0, 320, 240, BG);
+        label(menu, 128, 92, "Oh My 3DO", TEXT, UI_FONT_NORMAL);
+    menu->text_cursor = 0;
+    menu->text_style = UI_FONT_NORMAL;
+    menu->text_background_set = 1;
+    menu->text_background = BG;
+    text(menu, (320 - ui_font_width(status, UI_FONT_NORMAL)) / 2, 132, status, MUTED);
+    menu->text_background_set = 0;
+    for (i = 0; i < 16; ++i)
+        rectangle(menu, 120 + i * 5, 156, 3, 7,
+                  i < lit || (i == lit && now / 250UL % 2) ? OSD_GREEN : MakeRGB15(3, 8, 3));
     DisplayScreen(menu->screen.sc_Screens[menu->screen.sc_curScreen], 0);
     menu->config.screen_margin = margin;
     ++menu->boot_draws;
@@ -3239,7 +3181,7 @@ static void progress(void *context, size_t count)
     Menu *menu = (Menu *)context;
     unsigned long now = now_ms(menu);
     menu->read_count = count;
-    if (now - menu->progress_drawn < (menu->booting ? BOOT_STATIC_MS : 66UL))
+    if (now - menu->progress_drawn < (menu->booting ? BOOT_REDRAW_MS : 66UL))
         return;
     menu->progress_drawn = now;
     draw(menu);
@@ -3248,13 +3190,13 @@ static void progress(void *context, size_t count)
 static Menu *startup_menu;
 
 /* The OdeTransfer the menu uses: every ODE command passes through here, so
- * during startup it can keep the static moving (BOOT_STATIC_MS). */
+ * during startup it can keep the loader moving (BOOT_REDRAW_MS). */
 static int menu_transfer(void *context, const unsigned char *command, unsigned char *reply,
                          size_t capacity, size_t *length)
 {
     int result = ode_bus_transfer(context, command, reply, capacity, length);
     Menu *menu = startup_menu;
-    if (menu && menu->booting && now_ms(menu) - menu->progress_drawn >= BOOT_STATIC_MS) {
+    if (menu && menu->booting && now_ms(menu) - menu->progress_drawn >= BOOT_REDRAW_MS) {
         menu->progress_drawn = now_ms(menu);
         draw(menu);
     }
@@ -4440,7 +4382,7 @@ static void show_demo(Menu *menu)
  * while X is held, for a drive whose files trouble the menu), learns the
  * saves, clears the ODE's disc queue, opens the drive's root (loading the
  * media indexes) and returns to the remembered position. Each step draws
- * its progress on the splash screen (boot_step). On failure the browser
+ * its progress on the loader (boot_step). On failure the browser
  * shows why and offers the demo.
  */
 static void connect_ode(Menu *menu)
@@ -4544,10 +4486,6 @@ static void connect_ode(Menu *menu)
 done:
     menu->booting = 0;
     startup_menu = NULL;
-    if (menu->splash) {
-        UnloadCel(menu->splash);
-        menu->splash = NULL;
-    }
     draw(menu);
     boot_step(menu, BOOT_READY);
 }
@@ -9069,8 +9007,8 @@ static int open_console(Menu *menu)
     return 0;
 }
 
-/* Loads the splash screen (drawn at once) and the logo from the menu's
- * disc, and the system font for drawing text. */
+/* Loads the logo from the menu's disc and shows the loader with it, and
+ * finds the system font for drawing text. */
 static void load_menu_art(Menu *menu)
 {
     Font *font = GetCurrentFont();
@@ -9079,24 +9017,18 @@ static void load_menu_art(Menu *menu)
         menu->have_font = 1;
     }
     menu->covers_enabled = menu_cover_count != 0;
-#ifndef MENU_DEMO
-    menu->splash = LoadCel("$boot/startup.cel", MEMTYPE_CEL);
-    /* Black pixels in the splash are transparent: the live static shows there. */
-    if (menu->splash) {
-        menu->splash->ccb_Flags |= CCB_LAST;
-        menu->splash->ccb_Flags &= ~CCB_BGND;
-    }
-    menu->booting = 1;
-    draw(menu);
-    boot_step(menu, BOOT_SPLASH);
-#endif
     menu->logo = LoadCel("$boot/logo.cel", MEMTYPE_CEL);
-    init_channel_gecko(menu);
     if (menu->logo) {
         menu->logo->ccb_XPos = 16 << 16;
         menu->logo->ccb_YPos = 8 << 16;
         menu->logo->ccb_Flags |= CCB_LAST;
     }
+#ifndef MENU_DEMO
+    menu->booting = 1;
+    draw(menu);
+    boot_step(menu, BOOT_LOADER);
+#endif
+    init_channel_gecko(menu);
     boot_step(menu, BOOT_ART);
 }
 
@@ -9432,7 +9364,7 @@ static void main_loop_pass(Menu *menu, Pad *pad)
 }
 
 /* Starts the menu: settings at their defaults until the drive's are read,
- * the console set up, the splash shown while connecting to the ODE (or the
+ * the console set up, the loader shown while connecting to the ODE (or the
  * demo, in the demo build), then the main loop, which never ends: the menu
  * stops when the console reboots into a game. */
 int main(int argc, char **argv)

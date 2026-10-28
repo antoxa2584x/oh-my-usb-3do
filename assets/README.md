@@ -40,25 +40,25 @@ python3 tools/prepare-branding.py --console --windows-resource
 
 Normal menu builds use the checked-in cel and do not require ImageMagick or
 image generation. The build verifies that the packaged cel matches this asset.
-Omit the two flags to export only PNGs and the ICO. Startup exports replace
-only the logo panel and preserve the exact black mask used for live static;
-dark logo pixels are raised above RGB555 black to keep them opaque.
+Omit the two flags to export only PNGs and the ICO. The loading screen export
+replaces only its logo panel; dark logo pixels are raised above RGB555 black.
 
 ## Loading screen
 
 The Gecko TV startup screen ("Tuning in") combines the generated `logo-source.png`
 with shapes, bitmap text and TV static: the logo on a black caption box, a green
 channel display and a tuning bar. The screen layout was composed without an
-additional image-generation step. It comes in two versions:
+additional image-generation step.
 
-- `loading-menu.png` has the static and a quarter-filled bar baked in. It
-  becomes `loading.banner`, the 16-bit RGB555 `APPSCRN` asset installed as the
-  boot disc's `BannerScreen`, which the console shows before LaunchMe begins.
-- `startup-menu.png` leaves the static area pure black (0) and has no bar; every
-  other pixel is non-zero. It becomes `startup.cel`, which the menu shows while
-  it connects and reads the USB drive. The cel's BGND flag is clear, so the
-  black area is transparent: the menu draws moving static behind it and fills
-  the tuning bar a quarter per startup stage.
+`loading-menu.png` has the static and a quarter-filled bar baked in. It becomes
+`loading.banner`, the 16-bit RGB555 `APPSCRN` asset installed as the boot disc's
+`BannerScreen`, which the console shows before LaunchMe begins. While it then
+connects and reads the USB drive, the menu draws its own plain loader: the logo,
+the current step and a progress bar.
+
+An earlier version also showed this picture full-screen (`startup.cel`), with
+moving static behind it, while the menu started. One console showed only a
+black screen at that point, so the menu no longer uses it.
 
 The banner's binary header specifies height 240, width 320 and 153,600 pixel
 bytes, matching the toolkit banner's header. The converter's info output labels
@@ -67,13 +67,11 @@ header was checked against Portfolio's `VideoImage` layout. The ISO build
 compares the entire packaged banner payload to the saved asset and verifies its
 disc signature.
 
-To regenerate the console files from the two PNGs:
+To regenerate the banner from its PNG:
 
 ```sh
 ./tools/dev-container run 3it to-banner \
   --output-path /workspace/assets/loading.banner /workspace/assets/loading-menu.png
-./tools/dev-container run 3it to-cel --bpp 16 --packed false --ccb-last set \
-  --ccb-bgnd unset -o /workspace/assets/startup.cel /workspace/assets/startup-menu.png
 ```
 
 Both menu and demo builds use the saved banner, with no image generation or host
@@ -109,10 +107,6 @@ on or off. Rasterizing an outline font to 1-bit looked blocky on a real console
 and antialiasing it looked soft; a hand-drawn bitmap font avoids both. Glyphs
 keep their native pixel size. The generated font is covered by
 `vendor/fonts/ark-pixel-OFL.txt` (SIL Open Font License 1.1).
-
-`startup.cel` is an unpacked 16-bit CEL of `startup-menu.png` (see Loading
-screen). It stays visible while startup configuration and the saved folder load
-and is freed before the browser appears.
 
 ## Channel-changing gecko
 

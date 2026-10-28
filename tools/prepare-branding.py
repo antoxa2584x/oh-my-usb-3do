@@ -8,10 +8,10 @@ ImageMagick:
   logo-menu.png      the menu's 128x34 wordmark
   logo-desktop.png   the desktop app's 768x240 wordmark
   app-icon.png/.ico  the desktop app icon (the .ico holds sizes 16 to 256)
-and paints the new wordmark into startup-menu.png and loading-menu.png.
+and paints the new wordmark into loading-menu.png.
 
 --console also converts those images into the 3DO formats the menu loads
-(logo-menu.cel, loading.banner, startup.cel) with the SDK container.
+(logo-menu.cel, loading.banner) with the SDK container.
 --windows-resource also compiles app-icon.rc into app-icon.res for the
 Windows build, inside the desktop cross-build container.
 """
@@ -29,9 +29,9 @@ WORDMARKS = [("logo-menu.png", "128x34"), ("logo-desktop.png", "768x240")]
 
 ICON_SIZES = "256,128,64,48,32,24,16"
 
-# The startup and loading screens share a layout: a logo panel, filled with
-# this color, inside which the wordmark is placed.
-SPLASH_SCREENS = ["startup-menu.png", "loading-menu.png"]
+# The loading screen has a logo panel, filled with this color, inside which
+# the wordmark is placed.
+SPLASH_SCREENS = ["loading-menu.png"]
 SPLASH_PANEL_COLOR = "#080810"
 SPLASH_PANEL_RECTANGLE = "rectangle 56,66 263,144"
 SPLASH_LOGO_SIZE = "196x70"
@@ -60,8 +60,8 @@ def export_desktop_images(magick):
 def update_splash_screens(magick):
     """Paint the new wordmark into each splash screen, in place.
 
-    Keeps the startup screen's native layout and exact black transparency
-    mask: only the logo panel is cleared and redrawn.
+    Keeps the screen's native layout: only the logo panel is cleared and
+    redrawn.
     """
     source = ASSETS / "logo-source.png"
     for name in SPLASH_SCREENS:
@@ -134,25 +134,6 @@ def export_console_images():
         "-o",
         "/workspace/assets/loading.banner",
         "/workspace/assets/loading-menu.png",
-    )
-
-    # The full-screen startup image: unpacked and opaque.
-    run(
-        dev,
-        "run",
-        "3it",
-        "to-cel",
-        "--bpp",
-        "16",
-        "--packed",
-        "false",
-        "--ccb-last",
-        "set",
-        "--ccb-bgnd",
-        "unset",
-        "-o",
-        "/workspace/assets/startup.cel",
-        "/workspace/assets/startup-menu.png",
     )
 
 

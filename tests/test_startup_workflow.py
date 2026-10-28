@@ -24,7 +24,6 @@ stubs = r"""
 #include <stdio.h>
 #include <string.h>
 #define ControlX 1
-#define NULL_SPLASH ((void *)1)
 typedef struct { unsigned int cped_ButtonBits; } ControlPadEventData;
 typedef struct Menu {
     Ode ode; OdeListing listing; OdePlaylist playlist; Om3dvid7Sound preview_audio;
@@ -36,10 +35,10 @@ typedef struct Menu {
     int recent_result,diagnostics_result,recent_valid,config_result,skip_usb_art,covers_enabled,art_indexes_valid;
     int settings_folder_workaround,settings_usb_covers,settings_remember_position;
     int settings_recent_games,settings_video_previews;
-    void *splash; const char *message;
+    const char *message;
 } Menu;
 static Menu *startup_menu;
-static int fail_stage,recovery,configured,positioned,shown,splash_draws;
+static int fail_stage,recovery,configured,positioned,shown,loader_draws;
 void ode_playlist_dispose(OdePlaylist *p) { memset(p,0,sizeof(*p)); }
 void library_catalog_free(LibraryCatalog *p) { memset(p,0,sizeof(*p)); }
 void menu_favorites_free(MenuFavorites *p) { memset(p,0,sizeof(*p)); }
@@ -52,9 +51,9 @@ static void update_breadcrumb(Menu *m) { (void)m; }
 enum { BOOT_IDENTIFY, BOOT_CONFIG, BOOT_SAVES, BOOT_QUEUE, BOOT_POSITION, BOOT_READY };
 static void boot_step(Menu *m,int step) { (void)m; (void)step; }
 static void draw(Menu *m) {
-    if (m->booting) { ++splash_draws; assert(!shown); }
+    if (m->booting) { ++loader_draws; assert(!shown); }
     else {
-        ++shown; assert(!m->splash);
+        ++shown;
         if (m->ready && !recovery) assert(configured && positioned && m->config.screen_margin==12 && m->depth==3);
     }
 }
@@ -76,26 +75,25 @@ void menu_set_hide_adult(int hide) { (void)hide; }
 static void learn_saves(Menu *m) { assert(configured && m->booting && !shown); ++learned; }
 static void load_directory(Menu *m,size_t selected) { assert(!selected && m->booting); m->ready=m->view_valid=fail_stage!=4; }
 static void load_position(Menu *m) { assert(configured && m->booting && !shown); ++positioned;m->depth=3;m->selected=5; }
-static void UnloadCel(void *p) { assert(p==NULL_SPLASH); }
 """
 checks = r"""
 int main(void) {
     Menu menu; int failure;
     for(failure=0;failure<=4;++failure) {
-        memset(&menu,0,sizeof(menu));menu.bus.request=-1;menu.splash=NULL_SPLASH;
+        memset(&menu,0,sizeof(menu));menu.bus.request=-1;
         menu.root_known=1;
-        fail_stage=failure;recovery=configured=positioned=shown=splash_draws=0;
+        fail_stage=failure;recovery=configured=positioned=shown=loader_draws=0;
         connect_ode(&menu);
-        assert(!menu.booting && !menu.splash && shown==1 && splash_draws);
+        assert(!menu.booting && shown==1 && loader_draws);
         assert(!startup_menu && menu.boot_stage>=1);
         assert(!menu.root_known);
         if(!failure) assert(positioned==1 && menu.saved_config.screen_margin==12 && menu.boot_stage==4);
     }
-    memset(&menu,0,sizeof(menu)); menu.splash=NULL_SPLASH;
-    fail_stage=0;recovery=1;configured=positioned=shown=splash_draws=0;
+    memset(&menu,0,sizeof(menu));
+    fail_stage=0;recovery=1;configured=positioned=shown=loader_draws=0;
     connect_ode(&menu);
     assert(!configured && !positioned && menu.config_result==2 && shown==1);
-    puts("Startup: splash hides default layout; saved settings and folder precede menu; failures and X recovery passed");
+    puts("Startup: loader hides default layout; saved settings and folder precede menu; failures and X recovery passed");
     return 0;
 }
 """

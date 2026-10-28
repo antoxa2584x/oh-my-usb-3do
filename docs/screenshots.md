@@ -9,10 +9,6 @@ The [original 320×240 captures](images/native/) are also available.
 The browser, media, Tools, Help and game details captures show menu v1.0.1.
 The category and Save Manager examples show v1.0.0.
 
-## Startup
-
-![Startup screen with live TV static](images/startup.png)
-
 ## Game browser and cover
 
 ![Road Rash selected in the game browser with its cover displayed](images/browser.png)
